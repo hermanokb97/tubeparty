@@ -13,7 +13,8 @@ export const searchYouTube = async (query: string, maxResults: number = 5): Prom
     try {
         const response = await fetch(
             `https://www.googleapis.com/youtube/v3/search?` +
-            `part=snippet&type=video&videoCategoryId=10&` +
+            `part=snippet&type=video&` +
+            `videoEmbeddable=true&videoSyndicated=true&` +
             `q=${encodeURIComponent(query)}&` +
             `maxResults=${maxResults}&` +
             `key=${YOUTUBE_API_KEY}`

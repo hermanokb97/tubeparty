@@ -5,7 +5,7 @@ import { ChatRoom } from './components/ChatRoom';
 import { Playlist, RepeatMode } from './components/Playlist';
 import { Onboarding } from './components/Onboarding';
 import { StartModal } from './components/StartModal';
-import { extractVideoId, getAiChatResponse, getVideoRecommendations, getGenreRecommendations } from './services/geminiService';
+import { extractVideoId, getAiChatResponse, getVideoRecommendations } from './services/geminiService';
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
@@ -422,19 +422,36 @@ const App: React.FC = () => {
 
   // Start Selection Handlers
   const handleStartWithGenre = async (genre: GenreType) => {
-    if (!currentRoom?.apiKey) return;
-
     setIsStartLoading(true);
     try {
-      const videos = await getGenreRecommendations(genre, currentRoom.apiKey);
+      // Use YouTube API for genre search (embeddable videos only)
+      const genreQueries: Record<string, string> = {
+        lofi: 'lofi hip hop chill beats',
+        kpop: 'kpop music video official',
+        ballad: '한국 발라드 인기곡',
+        pop: 'pop music official video',
+        random: 'trending music video 2024'
+      };
+
+      const query = genreQueries[genre] || genre;
+      const videos = await youtubeService.searchYouTube(query, 5);
 
       if (videos.length > 0) {
-        setCurrentVideo(videos[0]);
-        setPlaylist(videos);
+        const videoList = videos.map(v => ({
+          id: v.id,
+          title: v.title,
+          channelTitle: v.channelTitle,
+          thumbnail: v.thumbnail
+        }));
+
+        setCurrentVideo(videoList[0]);
+        setPlaylist(videoList);
 
         // Sync to Firebase
-        firebaseService.updateCurrentVideo(currentRoom.id, videos[0]);
-        firebaseService.updatePlaylist(currentRoom.id, videos);
+        if (currentRoom) {
+          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0]);
+          firebaseService.updatePlaylist(currentRoom.id, videoList);
+        }
 
         const genreInfo = GENRE_OPTIONS.find(g => g.id === genre);
         const genreName = genreInfo ? `${genreInfo.emoji} ${genreInfo.name}` : '🎵';
@@ -442,7 +459,7 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-start-${Date.now()}`,
           userId: 'ai-1',
-          text: `${genreName} 장르 음악 ${videos.length}개 AI 추천 완료! 🎵`,
+          text: `${genreName} 장르 음악 ${videoList.length}개 추천 완료! 🎵`,
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
@@ -585,7 +602,28 @@ const App: React.FC = () => {
       {/* Main Layout */}
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <section className="lg:col-span-8 flex flex-col gap-4">
-          <VideoPlayer videoId={currentVideo.id} onVideoEnd={handleVideoEnd} />
+          <VideoPlayer
+            videoId={currentVideo.id}
+            onVideoEnd={handleVideoEnd}
+            onVideoError={() => {
+              // Auto-skip to next video on error
+              if (playlist.length > 1) {
+                const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
+                const nextIndex = (currentIndex + 1) % playlist.length;
+                const nextVideo = playlist[nextIndex];
+                setCurrentVideo(nextVideo);
+                if (currentRoom) {
+                  firebaseService.updateCurrentVideo(currentRoom.id, nextVideo);
+                }
+                setMessages(prev => [...prev, {
+                  id: `skip-${Date.now()}`,
+                  userId: 'ai-1',
+                  text: `재생 불가 영상 스킵! ⏭️`,
+                  timestamp: Date.now()
+                }]);
+              }
+            }}
+          />
 
           <div className="bg-brand-gray/30 p-4 rounded-lg border border-brand-gray flex justify-between items-start">
             <div>
