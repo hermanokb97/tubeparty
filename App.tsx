@@ -10,6 +10,7 @@ import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
+import * as youtubeService from './services/youtubeService';
 import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy } from 'lucide-react';
 
 // Initial Data
@@ -193,7 +194,61 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, newMessage]);
     syncService.broadcast({ type: 'CHAT', payload: { message: newMessage } });
 
-    // AI Logic
+    // Check if user wants to add a song
+    const addSongPatterns = [
+      /(.+?)\s*(노래|곡|음악)\s*(추가|틀어|넣어|검색)/i,
+      /(추가|틀어|넣어|검색).*?(.+?)\s*(노래|곡|음악)/i,
+      /(.+?)\s*(틀어줘|추가해줘|넣어줘|검색해줘)/i
+    ];
+
+    let songQuery = '';
+    for (const pattern of addSongPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        songQuery = match[1] || match[2] || '';
+        break;
+      }
+    }
+
+    // If song add request detected, search and add
+    if (songQuery && songQuery.trim().length > 1) {
+      setIsAiTyping(true);
+
+      const results = await youtubeService.searchYouTube(songQuery.trim(), 1);
+
+      if (results.length > 0) {
+        const video: Video = {
+          id: results[0].id,
+          title: results[0].title,
+          channelTitle: results[0].channelTitle,
+          thumbnail: results[0].thumbnail
+        };
+
+        handleVideoChange(video);
+
+        const aiMessage: Message = {
+          id: `ai-add-${Date.now()}`,
+          userId: 'ai-1',
+          text: `"${results[0].title}" 추가했어! 🎵 지금 재생할게!`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        setIsAiTyping(false);
+        return;
+      } else {
+        const aiMessage: Message = {
+          id: `ai-notfound-${Date.now()}`,
+          userId: 'ai-1',
+          text: `"${songQuery}" 검색 결과가 없어 😢 다른 키워드로 시도해줘!`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        setIsAiTyping(false);
+        return;
+      }
+    }
+
+    // AI Logic (normal chat)
     const shouldAiReply = text.includes('@AI') || text.includes('추천') || Math.random() < 0.2;
 
     if (shouldAiReply) {
