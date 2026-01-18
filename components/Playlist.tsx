@@ -18,6 +18,7 @@ interface PlaylistProps {
   onSavePlaylist?: (name: string) => void;
   onLoadPlaylist?: (playlist: SavedPlaylist) => void;
   onDeletePlaylist?: (id: string) => void;
+  onRemoveVideo?: (id: string) => void;
 }
 
 export const Playlist: React.FC<PlaylistProps> = ({
@@ -33,7 +34,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
   savedPlaylists = [],
   onSavePlaylist,
   onLoadPlaylist,
-  onDeletePlaylist
+  onDeletePlaylist,
+  onRemoveVideo
 }) => {
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -218,6 +220,16 @@ export const Playlist: React.FC<PlaylistProps> = ({
                   {video.channelTitle}
                 </p>
               </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveVideo?.(video.id);
+                }}
+                className="p-2 text-gray-500 hover:text-red-500 hover:bg-white/10 rounded-full transition-colors opacity-0 group-hover:opacity-100 flex items-center justify-center h-fit self-center"
+                title="목록에서 삭제"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))
         )}

@@ -196,9 +196,10 @@ const App: React.FC = () => {
 
     // Check if user wants to add a song
     const addSongPatterns = [
-      /(.+?)\s*(노래|곡|음악)\s*(추가|틀어|넣어|검색)/i,
-      /(추가|틀어|넣어|검색).*?(.+?)\s*(노래|곡|음악)/i,
-      /(.+?)\s*(틀어줘|추가해줘|넣어줘|검색해줘)/i
+      /(.+?)\s*(노래|곡|음악)\s*(추가|틀어|넣어|검색|재생)/i,
+      /(추가|틀어|넣어|검색|재생).*?(.+?)\s*(노래|곡|음악)/i,
+      /(.+?)\s*(틀어줘|추가해줘|넣어줘|검색해줘|재생해줘)/i,
+      /(?:play|add)\s+(.+)/i
     ];
 
     let songQuery = '';
@@ -293,17 +294,28 @@ const App: React.FC = () => {
 
   const handleVideoChange = (video: Video) => {
     setCurrentVideo(video);
+
+    // Calculate new playlist first to avoid side effects in setter
+    let updatedPlaylist: Video[] = [];
     setPlaylist(prev => {
-      const newPlaylist = prev.some(v => v.id === video.id) ? prev : [video, ...prev];
-      // Sync to Firebase
-      if (currentRoom) {
-        firebaseService.updateCurrentVideo(currentRoom.id, video);
-        firebaseService.updatePlaylist(currentRoom.id, newPlaylist);
-      }
-      return newPlaylist;
+      const isVideoInPlaylist = prev.some(v => v.id === video.id);
+      updatedPlaylist = isVideoInPlaylist ? prev : [video, ...prev];
+      return updatedPlaylist;
     });
 
-    // Broadcast video change (for local tabs)
+    // Sync to Firebase (after state update)
+    // We use setTimeout to ensure we have the calculated playlist and avoid blocking render
+    setTimeout(() => {
+      if (currentRoom && updatedPlaylist.length > 0) {
+        firebaseService.updateCurrentVideo(currentRoom.id, video);
+        // Only update playlist if it changed (optimization)
+        if (updatedPlaylist.length > playlist.length) {
+          firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+        }
+      }
+    }, 0);
+
+    // Broadcast local
     syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video } });
   };
 
@@ -496,6 +508,26 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, msg]);
   };
 
+  const handleRemoveVideo = (videoId: string) => {
+    const newPlaylist = playlist.filter(v => v.id !== videoId);
+    setPlaylist(newPlaylist);
+
+    if (currentRoom) {
+      firebaseService.updatePlaylist(currentRoom.id, newPlaylist);
+
+      // If we removed the current video, play the next one (or stop/none)
+      if (videoId === currentVideo.id) {
+        if (newPlaylist.length > 0) {
+          const nextVideo = newPlaylist[0];
+          setCurrentVideo(nextVideo);
+          firebaseService.updateCurrentVideo(currentRoom.id, nextVideo);
+        }
+      }
+    }
+  };
+
+  // Chat Handlers ---
+
   // --- Render ---
 
   if (!hasJoined) {
@@ -601,6 +633,7 @@ const App: React.FC = () => {
 
       {/* Main Layout */}
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left: Video + Playlist */}
         <section className="lg:col-span-8 flex flex-col gap-4">
           <VideoPlayer
             videoId={currentVideo.id}
@@ -631,35 +664,9 @@ const App: React.FC = () => {
               <p className="text-gray-400 text-sm">{currentVideo.channelTitle}</p>
             </div>
           </div>
-        </section>
 
-        <section className="lg:col-span-4 h-[600px] lg:h-auto flex flex-col gap-4">
-          <div className="flex lg:hidden bg-gray-800 rounded-lg p-1 mb-2">
-            <button
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === TabType.CHAT ? 'bg-brand-gray text-white shadow' : 'text-gray-400'}`}
-              onClick={() => setActiveTab(TabType.CHAT)}
-            >
-              채팅
-            </button>
-            <button
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === TabType.PLAYLIST ? 'bg-brand-gray text-white shadow' : 'text-gray-400'}`}
-              onClick={() => setActiveTab(TabType.PLAYLIST)}
-            >
-              재생 목록
-            </button>
-          </div>
-
-          <div className={`flex-1 min-h-0 ${activeTab === TabType.CHAT ? 'block' : 'hidden lg:block'}`}>
-            <ChatRoom
-              messages={messages}
-              users={users}
-              currentUser={currentUser!}
-              onSendMessage={handleSendMessage}
-              isAiTyping={isAiTyping}
-            />
-          </div>
-
-          <div className={`h-1/3 lg:h-1/3 min-h-[200px] ${activeTab === TabType.PLAYLIST ? 'block h-full' : 'hidden lg:block'}`}>
+          {/* Playlist - Now below video */}
+          <div className="max-h-[300px] overflow-hidden">
             <Playlist
               videos={playlist}
               currentVideoId={currentVideo.id}
@@ -674,8 +681,20 @@ const App: React.FC = () => {
               onSavePlaylist={handleSavePlaylist}
               onLoadPlaylist={handleLoadPlaylist}
               onDeletePlaylist={handleDeletePlaylist}
+              onRemoveVideo={handleRemoveVideo}
             />
           </div>
+        </section>
+
+        {/* Right: Chat Only */}
+        <section className="lg:col-span-4 h-[500px] lg:h-[600px] flex flex-col">
+          <ChatRoom
+            messages={messages}
+            users={users}
+            currentUser={currentUser!}
+            onSendMessage={handleSendMessage}
+            isAiTyping={isAiTyping}
+          />
         </section>
       </main>
     </div>
