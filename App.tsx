@@ -8,7 +8,7 @@ import { StartModal } from './components/StartModal';
 import { extractVideoId, getAiChatResponse, getVideoRecommendations, getGenreRecommendations } from './services/geminiService';
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
-import * as roomStorage from './services/roomStorage';
+import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy } from 'lucide-react';
 
@@ -55,7 +55,7 @@ const App: React.FC = () => {
   const [showStartModal, setShowStartModal] = useState(false);
   const [isStartLoading, setIsStartLoading] = useState(false);
 
-  // --- Sync Logic ---
+  // --- Sync Logic (Local Tabs) ---
   useEffect(() => {
     if (!hasJoined) return;
 
@@ -98,56 +98,85 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [hasJoined, users]);
 
+  // --- Firebase Real-time Sync ---
+  useEffect(() => {
+    if (!hasJoined || !currentRoom) return;
+
+    // Subscribe to room updates from Firebase
+    const unsubscribe = firebaseService.subscribeToRoom(currentRoom.id, (data) => {
+      if (data.currentVideo && data.currentVideo.id !== currentVideo.id) {
+        setCurrentVideo(data.currentVideo);
+      }
+      if (data.playlist && data.playlist.length > 0) {
+        setPlaylist(data.playlist);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [hasJoined, currentRoom?.id]);
+
   // --- Handlers ---
 
-  const handleCreateRoom = (nickname: string, apiKey: string) => {
-    const newRoom = roomStorage.createRoom(apiKey, nickname);
-    setCurrentRoom(newRoom);
+  const handleCreateRoom = async (nickname: string, apiKey: string) => {
+    try {
+      const newRoom = await firebaseService.createRoom(apiKey, nickname);
+      setCurrentRoom(newRoom);
 
-    const newUser: User = {
-      id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: nickname,
-      avatar: '',
-      isAi: false
-    };
-    setCurrentUser(newUser);
-    setUsers(prev => [...prev, newUser]);
-    setHasJoined(true);
-    setShowStartModal(true); // Show start modal after joining
+      const newUser: User = {
+        id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: nickname,
+        avatar: '',
+        isAi: false
+      };
+      setCurrentUser(newUser);
+      setUsers(prev => [...prev, newUser]);
+      setHasJoined(true);
+      setShowStartModal(true);
 
-    // Broadcast join event
-    syncService.broadcast({ type: 'JOIN', payload: { user: newUser } });
-
-    // Welcome message with room code
-    setMessages(prev => [...prev, {
-      id: `room-created-${Date.now()}`,
-      userId: 'ai-1',
-      text: `방이 생성됐어! 방 코드: 📋 ${newRoom.id}`,
-      timestamp: Date.now()
-    }]);
+      // Welcome message with room code
+      setMessages(prev => [...prev, {
+        id: `room-created-${Date.now()}`,
+        userId: 'ai-1',
+        text: `방이 생성됐어! 방 코드: 📋 ${newRoom.id}`,
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      alert('방 생성에 실패했어요. 다시 시도해주세요.');
+    }
   };
 
-  const handleJoinRoom = (nickname: string, roomCode: string) => {
-    const room = roomStorage.getRoom(roomCode);
-    if (!room) {
-      alert('존재하지 않는 방 코드입니다.');
-      return;
+  const handleJoinRoom = async (nickname: string, roomCode: string) => {
+    try {
+      const room = await firebaseService.getRoom(roomCode.toUpperCase());
+      if (!room) {
+        alert('존재하지 않는 방 코드입니다.');
+        return;
+      }
+
+      setCurrentRoom(room);
+
+      const newUser: User = {
+        id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: nickname,
+        avatar: '',
+        isAi: false
+      };
+      setCurrentUser(newUser);
+      setUsers(prev => [...prev, newUser]);
+      setHasJoined(true);
+
+      // Welcome message
+      setMessages(prev => [...prev, {
+        id: `joined-${Date.now()}`,
+        userId: 'ai-1',
+        text: `${nickname}님이 입장했어! 환영해! 🎉`,
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      console.error('Failed to join room:', error);
+      alert('방 참가에 실패했어요. 다시 시도해주세요.');
     }
-
-    setCurrentRoom(room);
-
-    const newUser: User = {
-      id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: nickname,
-      avatar: '',
-      isAi: false
-    };
-    setCurrentUser(newUser);
-    setUsers(prev => [...prev, newUser]);
-    setHasJoined(true);
-
-    // Broadcast join event
-    syncService.broadcast({ type: 'JOIN', payload: { user: newUser } });
   };
 
   const handleSendMessage = async (text: string) => {
@@ -210,11 +239,16 @@ const App: React.FC = () => {
   const handleVideoChange = (video: Video) => {
     setCurrentVideo(video);
     setPlaylist(prev => {
-      if (prev.some(v => v.id === video.id)) return prev;
-      return [video, ...prev];
+      const newPlaylist = prev.some(v => v.id === video.id) ? prev : [video, ...prev];
+      // Sync to Firebase
+      if (currentRoom) {
+        firebaseService.updateCurrentVideo(currentRoom.id, video);
+        firebaseService.updatePlaylist(currentRoom.id, newPlaylist);
+      }
+      return newPlaylist;
     });
 
-    // Broadcast video change
+    // Broadcast video change (for local tabs)
     syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video } });
   };
 
@@ -225,7 +259,13 @@ const App: React.FC = () => {
     const newRecs = recs.filter(r => !playlist.some(p => p.id === r.id));
 
     if (newRecs.length > 0) {
-      setPlaylist(prev => [...prev, ...newRecs]);
+      const updatedPlaylist = [...playlist, ...newRecs];
+      setPlaylist(updatedPlaylist);
+
+      // Sync to Firebase
+      if (currentRoom) {
+        firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+      }
       const msg: Message = {
         id: `sys-rec-${Date.now()}`,
         userId: 'ai-1',
@@ -336,6 +376,10 @@ const App: React.FC = () => {
       if (videos.length > 0) {
         setCurrentVideo(videos[0]);
         setPlaylist(videos);
+
+        // Sync to Firebase
+        firebaseService.updateCurrentVideo(currentRoom.id, videos[0]);
+        firebaseService.updatePlaylist(currentRoom.id, videos);
 
         const genreInfo = GENRE_OPTIONS.find(g => g.id === genre);
         const genreName = genreInfo ? `${genreInfo.emoji} ${genreInfo.name}` : '🎵';

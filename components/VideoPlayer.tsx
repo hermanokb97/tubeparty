@@ -11,7 +11,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd })
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== 'https://www.youtube.com') return;
-      
+
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         // YouTube IFrame API state: 0 = ended
@@ -32,7 +32,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd })
       <iframe
         ref={iframeRef}
         className="absolute top-0 left-0 w-full h-full"
-        src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&enablejsapi=1&rel=0`}
+        src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&enablejsapi=1&rel=0&origin=${window.location.origin}`}
         title="YouTube video player"
         frameBorder="0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
