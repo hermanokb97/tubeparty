@@ -5,13 +5,15 @@ import { ChatRoom } from './components/ChatRoom';
 import { Playlist, RepeatMode } from './components/Playlist';
 import { Onboarding } from './components/Onboarding';
 import { StartModal } from './components/StartModal';
+import { YouTubeSearchModal } from './components/YouTubeSearchModal';
+import { PlaylistBrowser } from './components/PlaylistBrowser';
 import { extractVideoId, getAiChatResponse, getVideoRecommendations } from './services/geminiService';
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
-import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy } from 'lucide-react';
+import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic } from 'lucide-react';
 
 // Initial Data
 const SYSTEM_AI: User = { id: 'ai-1', name: 'TubeBot', avatar: '', isAi: true };
@@ -55,6 +57,18 @@ const App: React.FC = () => {
   // Start Modal State
   const [showStartModal, setShowStartModal] = useState(false);
   const [isStartLoading, setIsStartLoading] = useState(false);
+
+  // YouTube Search Modal State
+  const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Inline Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: string; title: string; channelTitle: string; thumbnail: string }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [inputMode, setInputMode] = useState<'search' | 'link'>('search');
+
+  // Playlist Browser State
+  const [showPlaylistBrowser, setShowPlaylistBrowser] = useState(false);
 
   // --- Sync Logic (Local Tabs) ---
   useEffect(() => {
@@ -275,7 +289,58 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddVideo = () => {
+  const handleAddVideo = async () => {
+    // 1. Check for Playlist URL
+    const listMatch = urlInput.match(/[?&]list=([^#\&\?]+)/);
+    if (listMatch) {
+      const playlistId = listMatch[1];
+      setIsGenerating(true); // Reuse generating state for loading UI
+      const videos = await youtubeService.fetchPlaylistItems(playlistId);
+
+      if (videos.length > 0) {
+        setPlaylist(prev => {
+          // Avoid duplicates
+          const newVideos = videos.filter(v => !prev.some(p => p.id === v.id));
+          return [...prev, ...newVideos];
+        });
+
+        if (currentRoom) {
+          // Sync new playlist to Firebase (merging with existing)
+          // Note: In a real app we might want to handle this more carefully to avoid overwrites
+          // but for now we'll append. 
+          // However, we can't easily get the 'latest' firebase state here without listening.
+          // We'll rely on our local state being up to date via the listener.
+          const currentPlaylist = playlist; // This might be stale if there are many updates?
+          // Actually state updates are async. 
+          // Let's rely on the setPlaylist callback result if possible, 
+          // but we need to trigger the side effect.
+
+          // Better approach: Calculate new list then update both.
+          const newVideos = videos.filter(v => !playlist.some(p => p.id === v.id));
+          const updatedPlaylist = [...playlist, ...newVideos];
+
+          if (newVideos.length > 0) {
+            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+          }
+        }
+
+        const msg: Message = {
+          id: `sys-plist-${Date.now()}`,
+          userId: 'ai-1',
+          text: `플레이리스트에서 영상 ${videos.length}개를 가져왔어! 📚`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, msg]);
+        syncService.broadcast({ type: 'CHAT', payload: { message: msg } });
+        setUrlInput('');
+      } else {
+        alert('플레이리스트를 불러올 수 없거나 비어있습니다.');
+      }
+      setIsGenerating(false);
+      return;
+    }
+
+    // 2. Check for Single Video URL
     const videoId = extractVideoId(urlInput);
     if (videoId) {
       const newVideo: Video = {
@@ -353,6 +418,70 @@ const App: React.FC = () => {
     }
   };
 
+  // Inline YouTube Search
+  const handleInlineSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const results = await youtubeService.searchYouTube(searchQuery.trim(), 5);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectSearchResult = (result: { id: string; title: string; channelTitle: string; thumbnail: string }) => {
+    const video: Video = {
+      id: result.id,
+      title: result.title,
+      channelTitle: result.channelTitle,
+      thumbnail: result.thumbnail,
+    };
+    handleVideoChange(video);
+    setSearchQuery('');
+    setSearchResults([]);
+    setMessages(prev => [...prev, {
+      id: `search-${Date.now()}`,
+      userId: 'ai-1',
+      text: `🔍 "${video.title}" 검색해서 추가했어! 바로 재생할게!`,
+      timestamp: Date.now()
+    }]);
+  };
+
+  // Handle adding a playlist from browser
+  const handleAddPlaylist = async (playlistId: string, title: string) => {
+    const videos = await youtubeService.fetchPlaylistItems(playlistId, 50);
+    if (videos.length > 0) {
+      const videoList = videos.map(v => ({
+        id: v.id,
+        title: v.title,
+        channelTitle: v.channelTitle,
+        thumbnail: v.thumbnail
+      }));
+
+      setPlaylist(prev => [...prev, ...videoList]);
+
+      // Play first video of the playlist
+      handleVideoChange(videoList[0]);
+
+      // Update Firebase if in a room
+      if (currentRoom) {
+        firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videoList]);
+      }
+
+      setMessages(prev => [...prev, {
+        id: `playlist-${Date.now()}`,
+        userId: 'ai-1',
+        text: `📋 "${title}" 재생목록에서 ${videos.length}곡을 추가했어! 🎵`,
+        timestamp: Date.now()
+      }]);
+    }
+  };
+
   // Shuffle & Repeat Handlers
   const handleToggleShuffle = () => {
     setIsShuffleOn(prev => !prev);
@@ -367,28 +496,31 @@ const App: React.FC = () => {
   };
 
   const handleVideoEnd = useCallback(() => {
+    console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn);
     if (repeatMode === 'one') {
-      // Re-trigger same video by changing key (handled in VideoPlayer)
       setCurrentVideo({ ...currentVideo });
       return;
     }
 
     const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
+    console.log('Current Index:', currentIndex, 'Playlist Length:', playlist.length);
 
     if (isShuffleOn) {
-      // Random selection (excluding current)
       const otherVideos = playlist.filter(v => v.id !== currentVideo.id);
       if (otherVideos.length > 0) {
         const randomVideo = otherVideos[Math.floor(Math.random() * otherVideos.length)];
         handleVideoChange(randomVideo);
       }
     } else {
-      // Sequential playback
       const nextIndex = currentIndex + 1;
       if (nextIndex < playlist.length) {
+        console.log('Playing next video:', playlist[nextIndex]);
         handleVideoChange(playlist[nextIndex]);
       } else if (repeatMode === 'all' && playlist.length > 0) {
+        console.log('Looping to first video');
         handleVideoChange(playlist[0]);
+      } else {
+        console.log('End of playlist');
       }
     }
   }, [currentVideo, playlist, isShuffleOn, repeatMode]);
@@ -492,6 +624,53 @@ const App: React.FC = () => {
     }
   };
 
+
+
+  const handleStartWithRanking = async () => {
+    setIsStartLoading(true);
+    try {
+      const videos = await youtubeService.getPopularVideos('KR'); // Korea by default
+
+      if (videos.length > 0) {
+        const videoList = videos.map(v => ({
+          id: v.id,
+          title: v.title,
+          channelTitle: v.channelTitle,
+          thumbnail: v.thumbnail
+        }));
+
+        setCurrentVideo(videoList[0]);
+        setPlaylist(videoList);
+
+        if (currentRoom) {
+          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0]);
+          firebaseService.updatePlaylist(currentRoom.id, videoList);
+        }
+
+        const msg: Message = {
+          id: `sys-ranking-${Date.now()}`,
+          userId: 'ai-1',
+          text: `🔥 대한민국 인기 급상승 차트 50곡을 가져왔어!`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, msg]);
+      } else {
+        const msg: Message = {
+          id: `sys-error-${Date.now()}`,
+          userId: 'ai-1',
+          text: `차트를 가져오지 못했어 😢 다시 시도해줘!`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, msg]);
+      }
+    } catch (error) {
+      console.error('Ranking load error:', error);
+    } finally {
+      setIsStartLoading(false);
+      setShowStartModal(false);
+    }
+  };
+
   const handleStartWithPlaylist = (savedPlaylist: SavedPlaylist) => {
     setPlaylist(savedPlaylist.videos);
     if (savedPlaylist.videos.length > 0) {
@@ -543,9 +722,32 @@ const App: React.FC = () => {
           isLoading={isStartLoading}
           onSelectGenre={handleStartWithGenre}
           onSelectPlaylist={handleStartWithPlaylist}
+          onSelectRanking={handleStartWithRanking}
           onClose={() => setShowStartModal(false)}
         />
       )}
+
+      {/* YouTube Search Modal */}
+      <YouTubeSearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onSelectVideo={(video) => {
+          handleVideoChange(video);
+          setMessages(prev => [...prev, {
+            id: `search-${Date.now()}`,
+            userId: 'ai-1',
+            text: `🔍 "${video.title}" 검색해서 추가했어! 바로 재생할게!`,
+            timestamp: Date.now()
+          }]);
+        }}
+      />
+
+      {/* Playlist Browser Modal */}
+      <PlaylistBrowser
+        isOpen={showPlaylistBrowser}
+        onClose={() => setShowPlaylistBrowser(false)}
+        onSelectPlaylist={handleAddPlaylist}
+      />
 
       {/* Toast */}
       {showCopiedToast && (
@@ -567,29 +769,111 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="hidden md:flex items-center bg-gray-800 rounded-full px-4 py-2 border border-gray-700 w-96 mx-4">
-          <LinkIcon size={16} className="text-gray-400 mr-2" />
-          <input
-            type="text"
-            placeholder="유튜브 링크 붙여넣기..."
-            className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddVideo()}
-          />
-          <button onClick={handleAddVideo} className="ml-2 hover:bg-gray-700 p-1 rounded-full transition-colors">
-            <Plus size={18} className="text-brand-red" />
-          </button>
+        {/* Search / Link Input - Single Row */}
+        <div className="hidden md:flex items-center relative mx-4 md-force-flex">
+          {/* Toggle Buttons */}
+          <div className="flex mr-2">
+            <button
+              onClick={() => { setInputMode('search'); setSearchResults([]); }}
+              className={`px-3 py-2 text-xs rounded-l-lg transition-colors border ${inputMode === 'search'
+                ? 'bg-brand-red text-white border-brand-red'
+                : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
+                }`}
+            >
+              <Search size={14} className="inline" />
+            </button>
+            <button
+              onClick={() => { setInputMode('link'); setSearchResults([]); }}
+              className={`px-3 py-2 text-xs rounded-r-lg transition-colors border-t border-r border-b ${inputMode === 'link'
+                ? 'bg-brand-red text-white border-brand-red'
+                : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
+                }`}
+            >
+              <LinkIcon size={14} className="inline" />
+            </button>
+          </div>
+
+          {/* Input Box */}
+          <div className="flex items-center bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 w-[320px]">
+            {inputMode === 'search' ? (
+              <>
+                <input
+                  type="text"
+                  placeholder="노래 검색..."
+                  className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
+                />
+                {searchQuery && (
+                  <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="mr-1 text-gray-500 hover:text-white">
+                    <X size={14} />
+                  </button>
+                )}
+                <button
+                  onClick={handleInlineSearch}
+                  disabled={isSearching}
+                  className="bg-brand-red hover:bg-red-700 disabled:bg-gray-600 text-white px-2 py-1 rounded text-xs transition-colors"
+                >
+                  {isSearching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="유튜브 링크..."
+                  className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddVideo()}
+                />
+                <button onClick={handleAddVideo} className="hover:bg-gray-700 p-1 rounded transition-colors">
+                  <Plus size={16} className="text-brand-red" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Search Results Dropdown */}
+          {searchResults.length > 0 && inputMode === 'search' && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
+              {searchResults.map((result) => (
+                <button
+                  key={result.id}
+                  onClick={() => handleSelectSearchResult(result)}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-gray-800 transition-colors text-left"
+                >
+                  <img src={result.thumbnail} alt={result.title} className="w-16 h-10 object-cover rounded" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm line-clamp-1">{result.title}</p>
+                    <p className="text-gray-500 text-xs line-clamp-1">{result.channelTitle}</p>
+                  </div>
+                  <Plus size={16} className="text-brand-red flex-shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          {/* Playlist Browser Button */}
+          <button
+            onClick={() => setShowPlaylistBrowser(true)}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full text-sm transition-colors"
+            title="재생목록 탐색"
+          >
+            <ListMusic size={14} />
+            <span className="hidden sm:inline">재생목록</span>
+          </button>
+
           {/* Invite Button */}
           <button
             onClick={handleShare}
             className="flex items-center gap-2 bg-brand-gray hover:bg-gray-700 text-white px-3 py-1.5 rounded-full text-sm transition-colors border border-gray-600"
           >
             <Share2 size={14} />
-            <span className="hidden sm:inline">초대하기</span>
+            <span className="hidden sm:inline">초대</span>
           </button>
 
           <div className="flex -space-x-2">
@@ -616,25 +900,89 @@ const App: React.FC = () => {
       </nav>
 
       {/* Mobile Input */}
-      <div className="md:hidden p-3 bg-brand-gray/20">
-        <div className="flex items-center bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
-          <input
-            type="text"
-            placeholder="유튜브 링크 추가..."
-            className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-          />
-          <button onClick={handleAddVideo} className="ml-2">
-            <Plus size={20} className="text-brand-red" />
+      <div className="md:hidden p-3 bg-brand-gray/20 relative md-force-hidden">
+        {/* Mobile Tab Buttons */}
+        <div className="flex mb-2 gap-2">
+          <button
+            onClick={() => { setInputMode('search'); setSearchResults([]); }}
+            className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'search'
+              ? 'bg-brand-red text-white'
+              : 'bg-gray-800 text-gray-400'
+              }`}
+          >
+            <Search size={14} />검색
+          </button>
+          <button
+            onClick={() => { setInputMode('link'); setSearchResults([]); }}
+            className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'link'
+              ? 'bg-brand-red text-white'
+              : 'bg-gray-800 text-gray-400'
+              }`}
+          >
+            <LinkIcon size={14} />링크
           </button>
         </div>
+
+        {/* Mobile Input Box */}
+        <div className="flex items-center bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          {inputMode === 'search' ? (
+            <>
+              <input
+                type="text"
+                placeholder="노래 제목, 아티스트 검색..."
+                className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
+              />
+              <button
+                onClick={handleInlineSearch}
+                disabled={isSearching}
+                className="ml-2 bg-brand-red px-3 py-1 rounded text-white text-sm"
+              >
+                {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder="유튜브 링크 추가..."
+                className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+              />
+              <button onClick={handleAddVideo} className="ml-2">
+                <Plus size={20} className="text-brand-red" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Mobile Search Results */}
+        {searchResults.length > 0 && inputMode === 'search' && (
+          <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg max-h-60 overflow-y-auto">
+            {searchResults.map((result) => (
+              <button
+                key={result.id}
+                onClick={() => handleSelectSearchResult(result)}
+                className="w-full flex items-center gap-3 p-2 hover:bg-gray-800 transition-colors text-left border-b border-gray-800 last:border-0"
+              >
+                <img src={result.thumbnail} alt={result.title} className="w-14 h-9 object-cover rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm line-clamp-1">{result.title}</p>
+                  <p className="text-gray-500 text-xs line-clamp-1">{result.channelTitle}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main Layout */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Video + Playlist */}
-        <section className="lg:col-span-8 flex flex-col gap-4">
+        <section className={`lg:col-span-8 flex-col gap-4 ${activeTab === TabType.CHAT ? 'hidden' : 'flex'} lg-force-flex`}>
           <VideoPlayer
             videoId={currentVideo.id}
             onVideoEnd={handleVideoEnd}
@@ -665,8 +1013,18 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Playlist - Now below video */}
-          <div className="max-h-[300px] overflow-hidden">
+          {/* Playlist - Always visible on Desktop, toggled on Mobile via parent section visibility logic above if we want to hide video too? 
+              Actually, usually video stays, only playlist/chat toggles. 
+              Let's refine: Video always shows? 
+              If user wants to chat while watching video on mobile... 
+              The current structure splits Video+Playlist vs Chat.
+              Let's keep Video always visible on mobile at top?
+              But the grid splits them. 
+              Let's try: 
+              - Mobile: Video always top. Below it: Playlist OR Chat.
+              - Desktop: Video+Playlist Left, Chat Right (Sticky).
+          */}
+          <div className="max-h-[400px]">
             <Playlist
               videos={playlist}
               currentVideoId={currentVideo.id}
@@ -686,8 +1044,20 @@ const App: React.FC = () => {
           </div>
         </section>
 
+        {/* On mobile, if we want to show chat, we must hide the left section? 
+            Or maybe better: Move VideoPlayer OUT of the grid so it's always top?
+            That's a larger refactor.
+            For now, let's just make the simple fix:
+            On mobile:
+            - If CHAT tab: Hide specific parts of left column? No, grid column hides entire section.
+            
+            Let's stick to the user's likely issue: Desktop layout "strange".
+            I'll implement sticky on right col.
+            And basic visibility toggle.
+        */}
+
         {/* Right: Chat Only */}
-        <section className="lg:col-span-4 h-[500px] lg:h-[600px] flex flex-col">
+        <section className={`lg:col-span-4 h-[500px] lg:h-[calc(100vh-100px)] flex-col lg:sticky lg:top-20 ${activeTab === TabType.PLAYLIST ? 'hidden' : 'flex'} lg-force-flex`}>
           <ChatRoom
             messages={messages}
             users={users}

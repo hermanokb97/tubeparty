@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0f0f0f;
+  color: white;
+}
+
+/* Fix for Tailwind CDN lg: media query issues */
+@media (min-width: 1024px) {
+  .lg-force-flex {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  /* Force 12-column grid layout */
+  main.grid {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  }
+
+  /* Left section: 8 columns */
+  main.grid>section:first-child {
+    grid-column: span 8 / span 8 !important;
+  }
+
+  /* Right section: 4 columns */
+  main.grid>section:last-child {
+    grid-column: span 4 / span 4 !important;
+    position: sticky !important;
+    top: 5rem !important;
+  }
+}
+
+/* Fix for md: breakpoint issues - show search bar on medium+ screens */
+@media (min-width: 768px) {
+  .md-force-flex {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .md-force-hidden {
+    display: none !important;
+  }
+}

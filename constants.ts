@@ -65,3 +65,46 @@ export const getRandomVideoFromGenre = (genre: GenreType): Video => {
 
     return videos[Math.floor(Math.random() * videos.length)];
 };
+
+// Popular Playlists by Category
+export interface CuratedPlaylist {
+    id: string;
+    title: string;
+    description: string;
+    thumbnail: string;
+    category: string;
+}
+
+export const CURATED_PLAYLISTS: CuratedPlaylist[] = [
+    // Lofi & Chill
+    { id: 'PLOzDu-MXXLliO9fBNZOQTBDddoA3FzZUo', title: 'Lofi Hip Hop Mix', description: '공부할 때 듣기 좋은 로파이', thumbnail: 'https://img.youtube.com/vi/jfKfPfyJRdk/mqdefault.jpg', category: '🎹 Lofi' },
+    { id: 'PLMC9KNkIncKvYin_USF1qoJQnIyMAfRxl', title: 'Chill Vibes', description: '편안한 분위기의 음악', thumbnail: 'https://img.youtube.com/vi/5qap5aO4i9A/mqdefault.jpg', category: '🎹 Lofi' },
+
+    // KPOP
+    { id: 'PLgzTt0k8mXzGh3Bfxq3OBw6Y8x0kZQ4OD', title: 'KPOP 2024 Hits', description: '최신 케이팝 히트곡', thumbnail: 'https://img.youtube.com/vi/AAbokV76tkU/mqdefault.jpg', category: '🎤 KPOP' },
+    { id: 'PL0H_J7bVm7AjlHkQDIX8z3B4TqL8e4Q1Z', title: 'KPOP Dance', description: '신나는 댄스곡 모음', thumbnail: 'https://img.youtube.com/vi/gdZLi9oWNZg/mqdefault.jpg', category: '🎤 KPOP' },
+
+    // Ballad
+    { id: 'PLNAiluTgSsZXvqHTbmH_O_TGxqfT_dqDT', title: '감성 발라드 모음', description: '드라마 OST 명곡들', thumbnail: 'https://img.youtube.com/vi/VPeIGmHJNIs/mqdefault.jpg', category: '💜 발라드' },
+    { id: 'PLcLjz5F8xpMOyhMBKLjRvnGVF1FKXQ4bJ', title: '카페 음악', description: '카페에서 듣기 좋은 음악', thumbnail: 'https://img.youtube.com/vi/nPt8bK2gbaU/mqdefault.jpg', category: '💜 발라드' },
+
+    // Pop
+    { id: 'PLDcnymzs18LU4Kexrs91TVdfnplU3I5zs', title: 'Global Top 50', description: '전세계 인기차트', thumbnail: 'https://img.youtube.com/vi/kTJczUoc26U/mqdefault.jpg', category: '🎵 팝송' },
+    { id: 'PLYAYp5OI4lRLf0DQRJmH_fy0tVvVpqU1a', title: 'Throwback Hits', description: '추억의 팝송', thumbnail: 'https://img.youtube.com/vi/JGwWNGJdvx8/mqdefault.jpg', category: '🎵 팝송' },
+
+    // Party & Workout
+    { id: 'PLhd1HyMTk3f5yNrpjAqx3kkbWRR_EjWnM', title: 'Party Mix', description: '파티용 신나는 음악', thumbnail: 'https://img.youtube.com/vi/fRh_vgS2dFE/mqdefault.jpg', category: '🎉 파티' },
+    { id: 'PLCD0445C57F2B7F41', title: 'Workout Mix', description: '운동할 때 듣는 음악', thumbnail: 'https://img.youtube.com/vi/ZbZSe6N_BXs/mqdefault.jpg', category: '💪 운동' },
+];
+
+// Get playlists by category
+export const getPlaylistsByCategory = (): Record<string, CuratedPlaylist[]> => {
+    const grouped: Record<string, CuratedPlaylist[]> = {};
+    CURATED_PLAYLISTS.forEach(playlist => {
+        if (!grouped[playlist.category]) {
+            grouped[playlist.category] = [];
+        }
+        grouped[playlist.category].push(playlist);
+    });
+    return grouped;
+};

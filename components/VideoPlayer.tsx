@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, SkipForward } from 'lucide-react';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { SkipForward } from 'lucide-react';
 
 interface VideoPlayerProps {
   videoId: string;
@@ -7,56 +7,124 @@ interface VideoPlayerProps {
   onVideoError?: () => void;
 }
 
+// Extend Window interface to include YouTube API
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
+
+let apiLoaded = false;
+let apiLoadingPromise: Promise<void> | null = null;
+
+const loadYouTubeAPI = (): Promise<void> => {
+  if (apiLoaded && window.YT && window.YT.Player) {
+    return Promise.resolve();
+  }
+
+  if (apiLoadingPromise) {
+    return apiLoadingPromise;
+  }
+
+  apiLoadingPromise = new Promise((resolve) => {
+    // Check if already loaded
+    if (window.YT && window.YT.Player) {
+      apiLoaded = true;
+      resolve();
+      return;
+    }
+
+    // Set callback before loading script
+    const existingCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      apiLoaded = true;
+      if (existingCallback) existingCallback();
+      resolve();
+    };
+
+    // Check if script already exists
+    if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
+  });
+
+  return apiLoadingPromise;
+};
+
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, onVideoError }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [hasError, setHasError] = useState(false);
-  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<any>(null);
+  const onVideoEndRef = useRef(onVideoEnd);
+  const onVideoErrorRef = useRef(onVideoError);
+
+  // Keep refs updated
+  useEffect(() => {
+    onVideoEndRef.current = onVideoEnd;
+    onVideoErrorRef.current = onVideoError;
+  }, [onVideoEnd, onVideoError]);
+
+  const initPlayer = useCallback(async () => {
+    await loadYouTubeAPI();
+
+    if (!containerRef.current) return;
+
+    // Destroy existing player
+    if (playerRef.current) {
+      try {
+        playerRef.current.destroy();
+      } catch (e) {
+        console.error('Error destroying player:', e);
+      }
+      playerRef.current = null;
+    }
+
+    // Create new player
+    playerRef.current = new window.YT.Player(containerRef.current, {
+      videoId: videoId,
+      playerVars: {
+        autoplay: 1,
+        rel: 0,
+        modestbranding: 1,
+        origin: window.location.origin,
+      },
+      events: {
+        onStateChange: (event: any) => {
+          console.log('YouTube State Change:', event.data);
+          // 0 = ended, 1 = playing, 2 = paused, 3 = buffering
+          if (event.data === 0) {
+            console.log('Video ended! Calling onVideoEnd...');
+            onVideoEndRef.current?.();
+          }
+        },
+        onError: (event: any) => {
+          console.error('YouTube Error:', event.data);
+          onVideoErrorRef.current?.();
+        },
+        onReady: (event: any) => {
+          console.log('YouTube Player Ready');
+        }
+      }
+    });
+  }, [videoId]);
 
   useEffect(() => {
-    setHasError(false);
+    initPlayer();
 
-    // Set a timeout to detect if video fails to load
-    // YouTube doesn't provide a clean error event, so we use a timeout approach
-    errorTimeoutRef.current = setTimeout(() => {
-      // Check if iframe is still showing error state
-      // This is a fallback - the user can manually skip if video doesn't play
-    }, 5000);
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://www.youtube.com') return;
-
-      try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-
-        // YouTube IFrame API state: 0 = ended, -1 = unstarted, 5 = cued
-        if (data.event === 'onStateChange') {
-          if (data.info === 0) {
-            onVideoEnd?.();
-          }
-          // Error states that might indicate playback issues
-          if (data.info === -1 || data.info === 5) {
-            // Video might have issues, but don't auto-skip immediately
-          }
-        }
-
-        // Detect error event
-        if (data.event === 'onError') {
-          setHasError(true);
-          onVideoError?.();
-        }
-      } catch {
-        // Ignore non-JSON messages
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
     return () => {
-      window.removeEventListener('message', handleMessage);
-      if (errorTimeoutRef.current) {
-        clearTimeout(errorTimeoutRef.current);
+      if (playerRef.current) {
+        try {
+          playerRef.current.destroy();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        playerRef.current = null;
       }
     };
-  }, [videoId, onVideoEnd, onVideoError]);
+  }, [videoId, initPlayer]);
 
   const handleManualSkip = () => {
     onVideoError?.();
@@ -64,20 +132,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, o
 
   return (
     <div className="relative w-full h-0 pb-[56.25%] bg-black rounded-lg overflow-hidden shadow-2xl border border-brand-gray">
-      <iframe
-        ref={iframeRef}
+      <div
+        ref={containerRef}
         className="absolute top-0 left-0 w-full h-full"
-        src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&enablejsapi=1&rel=0&origin=${window.location.origin}`}
-        title="YouTube video player"
-        frameBorder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowFullScreen
-      ></iframe>
+      />
 
       {/* Skip button overlay */}
       <button
         onClick={handleManualSkip}
-        className="absolute bottom-4 right-4 bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+        className="absolute bottom-4 right-4 bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm z-10"
         title="재생 안되면 클릭해서 스킵"
       >
         <SkipForward size={16} />

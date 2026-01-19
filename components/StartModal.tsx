@@ -8,6 +8,7 @@ interface StartModalProps {
     isLoading: boolean;
     onSelectGenre: (genre: GenreType) => void;
     onSelectPlaylist: (playlist: SavedPlaylist) => void;
+    onSelectRanking: () => void;
     onClose: () => void;
 }
 
@@ -16,6 +17,7 @@ export const StartModal: React.FC<StartModalProps> = ({
     isLoading,
     onSelectGenre,
     onSelectPlaylist,
+    onSelectRanking,
     onClose
 }) => {
     return (
@@ -71,6 +73,21 @@ export const StartModal: React.FC<StartModalProps> = ({
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Popular Chart Button */}
+                    <div>
+                        <button
+                            onClick={onSelectRanking}
+                            disabled={isLoading}
+                            className="w-full flex items-center justify-center gap-2 p-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 rounded-xl transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed group"
+                        >
+                            <span className="text-2xl group-hover:scale-110 transition-transform">🏆</span>
+                            <div>
+                                <p className="text-white font-bold text-lg">인기 차트 (Top 50)</p>
+                                <p className="text-white/80 text-xs text-left">지금 한국에서 가장 인기 있는 음악</p>
+                            </div>
+                        </button>
                     </div>
 
                     {/* Saved Playlists */}
