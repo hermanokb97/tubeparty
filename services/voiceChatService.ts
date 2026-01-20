@@ -69,6 +69,17 @@ export class VoiceChatService {
 
         console.log('[VoiceChat] Joining room:', this.roomId);
 
+        // Clean up any stale signaling data from previous sessions
+        try {
+            console.log('[VoiceChat] Cleaning up stale signaling data...');
+            await remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`));
+            await remove(ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`));
+            await remove(ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`));
+        } catch (error) {
+            console.warn('[VoiceChat] Error cleaning up stale data:', error);
+        }
+
+        // Register user in voice chat room
         const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`);
         await set(userRef, {
             odedUserId: this.odedUserId,
@@ -273,18 +284,32 @@ export class VoiceChatService {
             const pc = this.peerConnections.get(remoteUserId);
 
             console.log('[VoiceChat] Received answer from:', remoteUserId);
+            console.log('[VoiceChat] PC exists:', !!pc);
+            if (pc) {
+                console.log('[VoiceChat] Current signalingState:', pc.signalingState);
+            }
 
-            if (pc && pc.signalingState === 'have-local-offer') {
-                try {
-                    await pc.setRemoteDescription(new RTCSessionDescription({
-                        type: data.type,
-                        sdp: data.answer,
-                    }));
-                    await this.applyPendingCandidates(remoteUserId);
-                } catch (error) {
-                    console.error('[VoiceChat] Failed to set remote description:', error);
-                    this.callbacks.onError(error as Error);
+            if (pc) {
+                // Accept answer if we're waiting for one (have-local-offer) or if state is stable but we haven't received remote track yet
+                if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable') {
+                    try {
+                        console.log('[VoiceChat] Setting remote description (answer)...');
+                        await pc.setRemoteDescription(new RTCSessionDescription({
+                            type: data.type as RTCSdpType,
+                            sdp: data.answer,
+                        }));
+                        console.log('[VoiceChat] Remote description set successfully');
+                        console.log('[VoiceChat] New signalingState:', pc.signalingState);
+                        await this.applyPendingCandidates(remoteUserId);
+                    } catch (error) {
+                        console.error('[VoiceChat] Failed to set remote description:', error);
+                        this.callbacks.onError(error as Error);
+                    }
+                } else {
+                    console.log('[VoiceChat] Skipping answer - signalingState is:', pc.signalingState);
                 }
+            } else {
+                console.log('[VoiceChat] No peer connection found for:', remoteUserId);
             }
         });
     }
