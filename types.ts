@@ -15,6 +15,7 @@ export interface User {
 export interface Message {
   id: string;
   userId: string;
+  userName?: string; // For displaying sender name in real-time chat
   text: string;
   timestamp: number;
 }

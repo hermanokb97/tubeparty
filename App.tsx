@@ -130,6 +130,26 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [hasJoined, currentRoom?.id]);
 
+  // --- Firebase Real-time Chat ---
+  useEffect(() => {
+    if (!hasJoined || !currentRoom) return;
+
+    // Subscribe to messages from Firebase
+    const unsubscribe = firebaseService.subscribeToMessages(currentRoom.id, (firebaseMessages) => {
+      // Merge Firebase messages with local messages, avoiding duplicates
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        const newMessages = firebaseMessages.filter(m => !existingIds.has(m.id) && m.userId !== currentUser?.id);
+        if (newMessages.length > 0) {
+          return [...prev, ...newMessages].sort((a, b) => a.timestamp - b.timestamp);
+        }
+        return prev;
+      });
+    });
+
+    return () => unsubscribe();
+  }, [hasJoined, currentRoom?.id, currentUser?.id]);
+
   // --- Handlers ---
 
   const handleCreateRoom = async (nickname: string, apiKey: string) => {
@@ -200,13 +220,19 @@ const App: React.FC = () => {
     const newMessage: Message = {
       id: `${currentUser.id}-${Date.now()}`,
       userId: currentUser.id,
+      userName: currentUser.name, // Include user name for Firebase chat
       text,
       timestamp: Date.now()
     };
 
-    // Update local and broadcast
+    // Update local and broadcast to other tabs
     setMessages(prev => [...prev, newMessage]);
     syncService.broadcast({ type: 'CHAT', payload: { message: newMessage } });
+
+    // Send to Firebase for real-time sync across users
+    if (currentRoom) {
+      firebaseService.addMessage(currentRoom.id, newMessage);
+    }
 
     // Check if user wants to add a song
     const addSongPatterns = [
@@ -687,6 +713,26 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, msg]);
   };
 
+  const handleStartWithVideo = (video: Video) => {
+    setCurrentVideo(video);
+    setPlaylist([video]);
+    setShowStartModal(false);
+
+    // Sync to Firebase
+    if (currentRoom) {
+      firebaseService.updateCurrentVideo(currentRoom.id, video);
+      firebaseService.updatePlaylist(currentRoom.id, [video]);
+    }
+
+    const msg: Message = {
+      id: `sys-start-${Date.now()}`,
+      userId: 'ai-1',
+      text: `🔍 "${video.title}" 검색해서 시작! 🎵`,
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, msg]);
+  };
+
   const handleRemoveVideo = (videoId: string) => {
     const newPlaylist = playlist.filter(v => v.id !== videoId);
     setPlaylist(newPlaylist);
@@ -723,6 +769,7 @@ const App: React.FC = () => {
           onSelectGenre={handleStartWithGenre}
           onSelectPlaylist={handleStartWithPlaylist}
           onSelectRanking={handleStartWithRanking}
+          onSelectVideo={handleStartWithVideo}
           onClose={() => setShowStartModal(false)}
         />
       )}
