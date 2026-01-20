@@ -14,7 +14,7 @@ import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
-import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic } from 'lucide-react';
+import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut } from 'lucide-react';
 
 // Initial Data
 const SYSTEM_AI: User = { id: 'ai-1', name: 'TubeBot', avatar: '', isAi: true };
@@ -1076,6 +1076,31 @@ const App: React.FC = () => {
               }}
             />
           )}
+
+          {/* Leave Room Button */}
+          <button
+            onClick={() => {
+              // Remove user from Firebase
+              if (currentRoom && currentUser) {
+                firebaseService.removeUserFromRoom(currentRoom.id, currentUser.id);
+              }
+              // Clear session
+              sessionStorage.removeItem('tubePartySession');
+              // Reset state
+              setHasJoined(false);
+              setCurrentRoom(null);
+              setCurrentUser({ id: '', name: '', avatar: '', isAi: false });
+              setUsers([SYSTEM_AI]);
+              setMessages([]);
+              setPlaylist([]);
+              setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
+            }}
+            className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1.5 rounded-full text-sm transition-colors border border-red-600/30"
+            title="방 나가기"
+          >
+            <LogOut size={14} />
+            <span className="hidden sm:inline">나가기</span>
+          </button>
           <div className="flex -space-x-2">
             {users.slice(0, 5).map((u, i) => (
               <div key={u.id} className={`w-8 h-8 rounded-full border-2 border-brand-dark flex items-center justify-center text-xs text-white font-bold

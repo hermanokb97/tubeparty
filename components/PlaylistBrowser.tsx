@@ -40,6 +40,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
     const [selectedGenre, setSelectedGenre] = useState(GENRE_CHARTS[0]);
     const [genreVideos, setGenreVideos] = useState<youtubeService.YouTubeSearchResult[]>([]);
     const [isGenreLoading, setIsGenreLoading] = useState(false);
+    const [selectedGenreVideos, setSelectedGenreVideos] = useState<Set<string>>(new Set());
 
     // Song search state
     const [songSearchQuery, setSongSearchQuery] = useState('');
@@ -58,6 +59,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
 
     const fetchGenreVideos = async () => {
         setIsGenreLoading(true);
+        setSelectedGenreVideos(new Set()); // Reset selection on genre change
         try {
             const videos = await youtubeService.searchYouTube(selectedGenre.query, 50);
             setGenreVideos(videos);
@@ -67,6 +69,41 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
         } finally {
             setIsGenreLoading(false);
         }
+    };
+
+    const toggleGenreVideoSelection = (videoId: string) => {
+        setSelectedGenreVideos(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(videoId)) {
+                newSet.delete(videoId);
+            } else {
+                newSet.add(videoId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleAddSelectedGenreVideos = () => {
+        if (onSelectVideos && selectedGenreVideos.size > 0) {
+            const videos: Video[] = genreVideos
+                .filter(v => selectedGenreVideos.has(v.id))
+                .map(v => ({
+                    id: v.id,
+                    title: v.title,
+                    channelTitle: v.channelTitle,
+                    thumbnail: v.thumbnail
+                }));
+            onSelectVideos(videos);
+            onClose();
+        }
+    };
+
+    const selectAllGenreVideos = () => {
+        setSelectedGenreVideos(new Set(genreVideos.map(v => v.id)));
+    };
+
+    const deselectAllGenreVideos = () => {
+        setSelectedGenreVideos(new Set());
     };
 
     const handleSearch = async () => {
@@ -287,21 +324,70 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 </div>
                             </div>
 
+                            {/* Selection Controls for Genre Videos */}
+                            {genreVideos.length > 0 && (
+                                <div className="flex items-center justify-between bg-gray-800/50 rounded-xl px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-gray-400">
+                                            {selectedGenreVideos.size > 0 ? (
+                                                <span className="text-orange-400 font-medium">{selectedGenreVideos.size}곡 선택됨</span>
+                                            ) : (
+                                                '곡을 선택하세요'
+                                            )}
+                                        </span>
+                                        <button
+                                            onClick={selectAllGenreVideos}
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                        >
+                                            전체 선택
+                                        </button>
+                                        <button
+                                            onClick={deselectAllGenreVideos}
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                        >
+                                            선택 해제
+                                        </button>
+                                    </div>
+                                    {selectedGenreVideos.size > 0 && onSelectVideos && (
+                                        <button
+                                            onClick={handleAddSelectedGenreVideos}
+                                            className={`bg-gradient-to-r ${selectedGenre.color} text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg`}
+                                        >
+                                            <Plus size={16} />
+                                            선택한 {selectedGenreVideos.size}곡 추가
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Genre Videos List */}
                             {isGenreLoading ? (
                                 <div className="flex items-center justify-center py-16">
                                     <Loader2 size={40} className="text-orange-400 animate-spin" />
                                 </div>
                             ) : genreVideos.length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-2">
                                     {genreVideos.map((video, index) => (
                                         <button
                                             key={video.id}
-                                            onClick={() => handleSelectSingleVideo(video)}
-                                            className="flex items-center gap-3 p-3 bg-gray-800/50 hover:bg-gray-700 rounded-xl transition-all text-left group"
+                                            onClick={() => toggleGenreVideoSelection(video.id)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group ${selectedGenreVideos.has(video.id)
+                                                    ? 'bg-orange-600/20 border-2 border-orange-500'
+                                                    : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
+                                                }`}
                                         >
-                                            <span className={`text-lg font-bold w-8 text-center ${index < 3 ? 'text-orange-400' : 'text-gray-500'
+                                            {/* Checkbox */}
+                                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${selectedGenreVideos.has(video.id)
+                                                    ? 'bg-orange-500 text-white'
+                                                    : 'bg-gray-700 border border-gray-600'
                                                 }`}>
+                                                {selectedGenreVideos.has(video.id) && (
+                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <span className={`text-lg font-bold w-6 text-center ${index < 3 ? 'text-orange-400' : 'text-gray-500'}`}>
                                                 {index + 1}
                                             </span>
                                             <img
@@ -310,12 +396,12 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                                 className="w-16 h-12 object-cover rounded-lg"
                                             />
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-white text-sm font-medium line-clamp-1 group-hover:text-orange-400 transition-colors">
+                                                <p className={`text-sm font-medium line-clamp-1 transition-colors ${selectedGenreVideos.has(video.id) ? 'text-orange-400' : 'text-white group-hover:text-orange-400'
+                                                    }`}>
                                                     {video.title}
                                                 </p>
                                                 <p className="text-gray-500 text-xs">{video.channelTitle}</p>
                                             </div>
-                                            <Plus size={18} className="text-gray-500 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all" />
                                         </button>
                                     ))}
                                 </div>
