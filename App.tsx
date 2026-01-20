@@ -136,14 +136,25 @@ const App: React.FC = () => {
 
     // Subscribe to messages from Firebase
     const unsubscribe = firebaseService.subscribeToMessages(currentRoom.id, (firebaseMessages) => {
-      // Merge Firebase messages with local messages, avoiding duplicates
+      // Replace messages with Firebase data, preserving local system messages
       setMessages(prev => {
-        const existingIds = new Set(prev.map(m => m.id));
-        const newMessages = firebaseMessages.filter(m => !existingIds.has(m.id) && m.userId !== currentUser?.id);
-        if (newMessages.length > 0) {
-          return [...prev, ...newMessages].sort((a, b) => a.timestamp - b.timestamp);
-        }
-        return prev;
+        // Keep only local system messages (ai-1 messages that aren't in Firebase)
+        const systemMessages = prev.filter(m =>
+          m.userId === 'ai-1' && !firebaseMessages.some(fm => fm.id === m.id)
+        );
+
+        // Merge: system messages + Firebase messages
+        const allMessages = [...systemMessages, ...firebaseMessages];
+
+        // Remove duplicates and sort by timestamp
+        const uniqueMessages = allMessages.reduce((acc, msg) => {
+          if (!acc.some(m => m.id === msg.id)) {
+            acc.push(msg);
+          }
+          return acc;
+        }, [] as typeof allMessages);
+
+        return uniqueMessages.sort((a, b) => a.timestamp - b.timestamp);
       });
     });
 
@@ -794,6 +805,28 @@ const App: React.FC = () => {
         isOpen={showPlaylistBrowser}
         onClose={() => setShowPlaylistBrowser(false)}
         onSelectPlaylist={handleAddPlaylist}
+        onSelectVideos={(videos) => {
+          // Add videos to playlist
+          setPlaylist(prev => {
+            const newVideos = videos.filter(v => !prev.some(p => p.id === v.id));
+            return [...prev, ...newVideos];
+          });
+          // Play first video
+          if (videos.length > 0) {
+            handleVideoChange(videos[0]);
+          }
+          // Sync to Firebase
+          if (currentRoom && videos.length > 0) {
+            firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videos]);
+          }
+          // Notify
+          setMessages(prev => [...prev, {
+            id: `genre-${Date.now()}`,
+            userId: 'ai-1',
+            text: `🎵 ${videos.length}곡이 추가되었어! 바로 재생할게!`,
+            timestamp: Date.now()
+          }]);
+        }}
       />
 
       {/* Toast */}
