@@ -70,6 +70,59 @@ const App: React.FC = () => {
   // Playlist Browser State
   const [showPlaylistBrowser, setShowPlaylistBrowser] = useState(false);
 
+  // --- Session Restore on Page Load ---
+  useEffect(() => {
+    const restoreSession = async () => {
+      const savedSession = sessionStorage.getItem('tubePartySession');
+      if (!savedSession) return;
+
+      try {
+        const { roomId, nickname, odedUserId } = JSON.parse(savedSession);
+        if (!roomId || !nickname) return;
+
+        const room = await firebaseService.getRoom(roomId);
+        if (!room) {
+          // Room no longer exists, clear session
+          sessionStorage.removeItem('tubePartySession');
+          return;
+        }
+
+        // Restore the session
+        setCurrentRoom(room);
+        const restoredUser: User = {
+          id: odedUserId || `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: nickname,
+          avatar: '',
+          isAi: false
+        };
+        setCurrentUser(restoredUser);
+        setUsers(prev => [...prev, restoredUser]);
+        setHasJoined(true);
+
+        // Load room data
+        if (room.currentVideo) {
+          setCurrentVideo(room.currentVideo);
+        }
+        if (room.playlist && room.playlist.length > 0) {
+          setPlaylist(room.playlist);
+        }
+
+        // Reconnected message
+        setMessages(prev => [...prev, {
+          id: `reconnected-${Date.now()}`,
+          userId: 'ai-1',
+          text: `🔄 세션이 복원되었어! ${nickname}님, 다시 돌아온 걸 환영해!`,
+          timestamp: Date.now()
+        }]);
+      } catch (error) {
+        console.error('Failed to restore session:', error);
+        sessionStorage.removeItem('tubePartySession');
+      }
+    };
+
+    restoreSession();
+  }, []);
+
   // --- Sync Logic (Local Tabs) ---
   useEffect(() => {
     if (!hasJoined) return;
@@ -179,6 +232,13 @@ const App: React.FC = () => {
       setHasJoined(true);
       setShowStartModal(true);
 
+      // Save session to sessionStorage for F5 restore
+      sessionStorage.setItem('tubePartySession', JSON.stringify({
+        roomId: newRoom.id,
+        nickname: nickname,
+        userId: newUser.id
+      }));
+
       // Welcome message with room code
       setMessages(prev => [...prev, {
         id: `room-created-${Date.now()}`,
@@ -211,6 +271,13 @@ const App: React.FC = () => {
       setCurrentUser(newUser);
       setUsers(prev => [...prev, newUser]);
       setHasJoined(true);
+
+      // Save session to sessionStorage for F5 restore
+      sessionStorage.setItem('tubePartySession', JSON.stringify({
+        roomId: room.id,
+        nickname: nickname,
+        userId: newUser.id
+      }));
 
       // Welcome message
       setMessages(prev => [...prev, {

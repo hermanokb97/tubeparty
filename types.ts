@@ -47,4 +47,6 @@ export interface Room {
   apiKey: string;       // Gemini API 키
   hostName: string;     // 호스트 닉네임
   createdAt: number;
+  currentVideo?: Video;  // 현재 재생 중인 비디오
+  playlist?: Video[];    // 플레이리스트
 }

@@ -67,7 +67,9 @@ export const getRoom = async (roomId: string): Promise<Room | null> => {
             id: roomId,
             apiKey: data.apiKey,
             hostName: data.hostName,
-            createdAt: data.createdAt
+            createdAt: data.createdAt,
+            currentVideo: data.currentVideo || undefined,
+            playlist: data.playlist || undefined
         };
     }
     return null;
