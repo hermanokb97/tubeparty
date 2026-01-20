@@ -25,14 +25,22 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
     const [isDeafened, setIsDeafened] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [remoteUsers, setRemoteUsers] = useState<RemoteUser[]>([]);
+    const [audioStatus, setAudioStatus] = useState<string>('');
 
     const voiceChatRef = useRef<VoiceChatService | null>(null);
     const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
     // Handle remote stream
     const handleRemoteStream = useCallback((remoteodedUserId: string, stream: MediaStream) => {
+        console.log('[VoiceChat UI] Received remote stream:', remoteodedUserId);
+        console.log('[VoiceChat UI] Stream tracks:', stream.getTracks().map(t => ({
+            kind: t.kind,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState
+        })));
+
         setRemoteUsers(prev => {
-            // Check if already exists
             if (prev.some(u => u.odedUserId === remoteodedUserId)) {
                 return prev.map(u =>
                     u.odedUserId === remoteodedUserId ? { ...u, stream } : u
@@ -40,28 +48,37 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             }
             return [...prev, { odedUserId: remoteodedUserId, stream }];
         });
+
+        setAudioStatus(`Stream received from ${remoteodedUserId.slice(-6)}`);
     }, []);
 
     // Handle user left
     const handleUserLeft = useCallback((remoteodedUserId: string) => {
+        console.log('[VoiceChat UI] User left:', remoteodedUserId);
         setRemoteUsers(prev => prev.filter(u => u.odedUserId !== remoteodedUserId));
-        // Clean up audio element
+
         const audio = audioRefs.current.get(remoteodedUserId);
         if (audio) {
+            audio.pause();
             audio.srcObject = null;
+            if (audio.parentNode) {
+                audio.parentNode.removeChild(audio);
+            }
             audioRefs.current.delete(remoteodedUserId);
         }
     }, []);
 
     // Handle error
     const handleError = useCallback((error: Error) => {
-        console.error('Voice chat error:', error);
+        console.error('[VoiceChat UI] Error:', error);
+        setAudioStatus(`Error: ${error.message}`);
         onError?.(error.message);
     }, [onError]);
 
     // Join voice chat
     const handleJoin = async () => {
         setIsConnecting(true);
+        setAudioStatus('Connecting...');
         try {
             voiceChatRef.current = new VoiceChatService(roomId, userId, {
                 onRemoteStream: handleRemoteStream,
@@ -71,6 +88,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
 
             await voiceChatRef.current.join();
             setIsJoined(true);
+            setAudioStatus('Connected - waiting for others');
         } catch (error) {
             handleError(error as Error);
         } finally {
@@ -86,9 +104,15 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         }
         setIsJoined(false);
         setRemoteUsers([]);
+        setAudioStatus('');
+
         // Clean up all audio elements
-        audioRefs.current.forEach(audio => {
+        audioRefs.current.forEach((audio, key) => {
+            audio.pause();
             audio.srcObject = null;
+            if (audio.parentNode) {
+                audio.parentNode.removeChild(audio);
+            }
         });
         audioRefs.current.clear();
     };
@@ -98,29 +122,68 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         if (voiceChatRef.current) {
             const muted = voiceChatRef.current.toggleMute();
             setIsMuted(muted);
+            setAudioStatus(muted ? 'Mic muted' : 'Mic unmuted');
         }
     };
 
-    // Toggle deafen (mute all incoming audio)
+    // Toggle deafen
     const handleToggleDeafen = () => {
-        setIsDeafened(prev => !prev);
+        const newDeafened = !isDeafened;
+        setIsDeafened(newDeafened);
         audioRefs.current.forEach(audio => {
-            audio.muted = !isDeafened;
+            audio.muted = newDeafened;
         });
+        setAudioStatus(newDeafened ? 'Speaker muted' : 'Speaker unmuted');
     };
 
-    // Play remote audio
+    // Play remote audio streams
     useEffect(() => {
         remoteUsers.forEach(user => {
             let audio = audioRefs.current.get(user.odedUserId);
+
             if (!audio) {
-                audio = new Audio();
+                console.log('[VoiceChat UI] Creating audio element for:', user.odedUserId);
+                audio = document.createElement('audio');
+                audio.id = `voice-audio-${user.odedUserId}`;
                 audio.autoplay = true;
+                audio.playsInline = true;
+                audio.volume = 1.0;
+                audio.style.display = 'none';
+                document.body.appendChild(audio);
                 audioRefs.current.set(user.odedUserId, audio);
+
+                // Debug events
+                audio.onplay = () => {
+                    console.log('[VoiceChat UI] Audio playing for:', user.odedUserId);
+                    setAudioStatus(`Playing audio from ${user.odedUserId.slice(-6)}`);
+                };
+                audio.onerror = (e) => {
+                    console.error('[VoiceChat UI] Audio error:', e);
+                    setAudioStatus('Audio error');
+                };
+                audio.onloadedmetadata = () => {
+                    console.log('[VoiceChat UI] Audio metadata loaded');
+                };
             }
+
             if (audio.srcObject !== user.stream) {
+                console.log('[VoiceChat UI] Setting stream to audio element');
                 audio.srcObject = user.stream;
                 audio.muted = isDeafened;
+
+                // Force play
+                const playPromise = audio.play();
+                if (playPromise !== undefined) {
+                    playPromise
+                        .then(() => {
+                            console.log('[VoiceChat UI] Audio playback started successfully');
+                            setAudioStatus('Audio playing');
+                        })
+                        .catch(err => {
+                            console.error('[VoiceChat UI] Audio play failed:', err);
+                            setAudioStatus(`Play failed: ${err.name}`);
+                        });
+                }
             }
         });
     }, [remoteUsers, isDeafened]);
@@ -131,6 +194,14 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             if (voiceChatRef.current) {
                 voiceChatRef.current.leave();
             }
+            audioRefs.current.forEach((audio) => {
+                audio.pause();
+                audio.srcObject = null;
+                if (audio.parentNode) {
+                    audio.parentNode.removeChild(audio);
+                }
+            });
+            audioRefs.current.clear();
         };
     }, []);
 
