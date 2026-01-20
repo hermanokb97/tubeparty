@@ -1,9 +1,16 @@
 // WebRTC Voice Chat Service
 // Uses Firebase Realtime Database for signaling
 
-import { getDatabase, ref, set, onValue, push, remove, onChildAdded, onChildRemoved, off } from 'firebase/database';
+import { getDatabase, ref, set, onValue, push, remove, onChildAdded, onChildRemoved, off, Database } from 'firebase/database';
 
-const database = getDatabase();
+// Lazy initialization of database to avoid issues if Firebase not yet initialized
+let database: Database | null = null;
+const getDb = (): Database => {
+    if (!database) {
+        database = getDatabase();
+    }
+    return database;
+};
 
 // STUN servers for NAT traversal
 const ICE_SERVERS = {
@@ -47,7 +54,7 @@ export class VoiceChatService {
             });
             return this.localStream;
         } catch (error) {
-            throw new Error('마이크 접근 권한이 필요합니다.');
+            throw new Error('마이???�근 권한???�요?�니??');
         }
     }
 
@@ -58,7 +65,7 @@ export class VoiceChatService {
         }
 
         // Register user in voice chat room
-        const userRef = ref(database, `voiceChat/${this.roomId}/users/${this.odedUserId}`);
+        const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`);
         await set(userRef, {
             odedUserId: this.odedUserId,
             joinedAt: Date.now(),
@@ -92,15 +99,15 @@ export class VoiceChatService {
         this.peerConnections.clear();
 
         // Remove user from voice chat room
-        const userRef = ref(database, `voiceChat/${this.roomId}/users/${this.odedUserId}`);
+        const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`);
         await remove(userRef);
 
         // Clean up signaling data
-        const offersRef = ref(database, `voiceChat/${this.roomId}/offers/${this.odedUserId}`);
+        const offersRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`);
         await remove(offersRef);
-        const answersRef = ref(database, `voiceChat/${this.roomId}/answers/${this.odedUserId}`);
+        const answersRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`);
         await remove(answersRef);
-        const candidatesRef = ref(database, `voiceChat/${this.roomId}/candidates/${this.odedUserId}`);
+        const candidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`);
         await remove(candidatesRef);
     }
 
@@ -141,7 +148,7 @@ export class VoiceChatService {
         // Handle ICE candidates
         pc.onicecandidate = async (event) => {
             if (event.candidate) {
-                const candidateRef = ref(database, `voiceChat/${this.roomId}/candidates/${remoteUserId}/${this.odedUserId}`);
+                const candidateRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${remoteUserId}/${this.odedUserId}`);
                 await push(candidateRef, event.candidate.toJSON());
             }
         };
@@ -159,7 +166,7 @@ export class VoiceChatService {
 
     // Listen for new users joining
     private listenForUsers(): void {
-        const usersRef = ref(database, `voiceChat/${this.roomId}/users`);
+        const usersRef = ref(getDb(), `voiceChat/${this.roomId}/users`);
 
         onChildAdded(usersRef, async (snapshot) => {
             const userData = snapshot.val();
@@ -185,7 +192,7 @@ export class VoiceChatService {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            const offerRef = ref(database, `voiceChat/${this.roomId}/offers/${remoteUserId}/${this.odedUserId}`);
+            const offerRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${remoteUserId}/${this.odedUserId}`);
             await set(offerRef, {
                 odedUserId: this.odedUserId,
                 offer: offer.sdp,
@@ -198,7 +205,7 @@ export class VoiceChatService {
 
     // Listen for offers
     private listenForOffers(): void {
-        const offersRef = ref(database, `voiceChat/${this.roomId}/offers/${this.odedUserId}`);
+        const offersRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`);
 
         onChildAdded(offersRef, async (snapshot) => {
             const data = snapshot.val();
@@ -216,7 +223,7 @@ export class VoiceChatService {
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
 
-                    const answerRef = ref(database, `voiceChat/${this.roomId}/answers/${remoteUserId}/${this.odedUserId}`);
+                    const answerRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${remoteUserId}/${this.odedUserId}`);
                     await set(answerRef, {
                         odedUserId: this.odedUserId,
                         answer: answer.sdp,
@@ -231,7 +238,7 @@ export class VoiceChatService {
 
     // Listen for answers
     private listenForAnswers(): void {
-        const answersRef = ref(database, `voiceChat/${this.roomId}/answers/${this.odedUserId}`);
+        const answersRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`);
 
         onChildAdded(answersRef, async (snapshot) => {
             const data = snapshot.val();
@@ -253,12 +260,12 @@ export class VoiceChatService {
 
     // Listen for ICE candidates
     private listenForIceCandidates(): void {
-        const candidatesRef = ref(database, `voiceChat/${this.roomId}/candidates/${this.odedUserId}`);
+        const candidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`);
 
         onChildAdded(candidatesRef, (senderSnapshot) => {
             const senderId = senderSnapshot.key;
             if (senderId) {
-                const senderCandidatesRef = ref(database, `voiceChat/${this.roomId}/candidates/${this.odedUserId}/${senderId}`);
+                const senderCandidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}/${senderId}`);
 
                 onChildAdded(senderCandidatesRef, async (candidateSnapshot) => {
                     const candidateData = candidateSnapshot.val();
