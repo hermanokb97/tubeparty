@@ -7,6 +7,7 @@ import { Onboarding } from './components/Onboarding';
 import { StartModal } from './components/StartModal';
 import { YouTubeSearchModal } from './components/YouTubeSearchModal';
 import { PlaylistBrowser } from './components/PlaylistBrowser';
+import { VoiceChat } from './components/VoiceChat';
 import { extractVideoId, getAiChatResponse, getVideoRecommendations } from './services/geminiService';
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
@@ -77,7 +78,7 @@ const App: React.FC = () => {
       if (!savedSession) return;
 
       try {
-        const { roomId, nickname, odedUserId } = JSON.parse(savedSession);
+        const { roomId, nickname, userId } = JSON.parse(savedSession);
         if (!roomId || !nickname) return;
 
         const room = await firebaseService.getRoom(roomId);
@@ -90,7 +91,7 @@ const App: React.FC = () => {
         // Restore the session
         setCurrentRoom(room);
         const restoredUser: User = {
-          id: odedUserId || `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          id: userId || `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: nickname,
           avatar: '',
           isAi: false
@@ -98,6 +99,9 @@ const App: React.FC = () => {
         setCurrentUser(restoredUser);
         setUsers(prev => [...prev, restoredUser]);
         setHasJoined(true);
+
+        // Re-register user in Firebase (in case they disconnected)
+        await firebaseService.addUserToRoom(roomId, { id: restoredUser.id, name: restoredUser.name });
 
         // Load room data
         if (room.currentVideo) {
@@ -214,6 +218,33 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [hasJoined, currentRoom?.id, currentUser?.id]);
 
+  // --- Firebase Real-time Users ---
+  useEffect(() => {
+    if (!hasJoined || !currentRoom) return;
+
+    // Subscribe to users from Firebase
+    const unsubscribe = firebaseService.subscribeToUsers(currentRoom.id, (firebaseUsers) => {
+      // Keep the AI user and add Firebase users
+      setUsers(prev => {
+        const aiUser = prev.find(u => u.isAi);
+        const usersList: User[] = aiUser ? [aiUser] : [SYSTEM_AI];
+
+        firebaseUsers.forEach(fu => {
+          usersList.push({
+            id: fu.id,
+            name: fu.name,
+            avatar: '',
+            isAi: false
+          });
+        });
+
+        return usersList;
+      });
+    });
+
+    return () => unsubscribe();
+  }, [hasJoined, currentRoom?.id]);
+
   // --- Handlers ---
 
   const handleCreateRoom = async (nickname: string, apiKey: string) => {
@@ -231,6 +262,9 @@ const App: React.FC = () => {
       setUsers(prev => [...prev, newUser]);
       setHasJoined(true);
       setShowStartModal(true);
+
+      // Register user in Firebase
+      await firebaseService.addUserToRoom(newRoom.id, { id: newUser.id, name: newUser.name });
 
       // Save session to sessionStorage for F5 restore
       sessionStorage.setItem('tubePartySession', JSON.stringify({
@@ -271,6 +305,9 @@ const App: React.FC = () => {
       setCurrentUser(newUser);
       setUsers(prev => [...prev, newUser]);
       setHasJoined(true);
+
+      // Register user in Firebase
+      await firebaseService.addUserToRoom(room.id, { id: newUser.id, name: newUser.name });
 
       // Save session to sessionStorage for F5 restore
       sessionStorage.setItem('tubePartySession', JSON.stringify({
@@ -1023,6 +1060,22 @@ const App: React.FC = () => {
             <span className="hidden sm:inline">초대</span>
           </button>
 
+          {/* Voice Chat */}
+          {currentRoom && currentUser && (
+            <VoiceChat
+              roomId={currentRoom.id}
+              userId={currentUser.id}
+              userName={currentUser.name}
+              onError={(error) => {
+                setMessages(prev => [...prev, {
+                  id: `voice-error-${Date.now()}`,
+                  userId: 'ai-1',
+                  text: `🎤 음성채팅 오류: ${error}`,
+                  timestamp: Date.now()
+                }]);
+              }}
+            />
+          )}
           <div className="flex -space-x-2">
             {users.slice(0, 5).map((u, i) => (
               <div key={u.id} className={`w-8 h-8 rounded-full border-2 border-brand-dark flex items-center justify-center text-xs text-white font-bold

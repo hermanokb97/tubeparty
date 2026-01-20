@@ -30,7 +30,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
     onSelectPlaylist,
     onSelectVideos,
 }) => {
-    const [activeTab, setActiveTab] = useState<'charts' | 'curated' | 'search'>('charts');
+    const [activeTab, setActiveTab] = useState<'charts' | 'curated' | 'search' | 'songSearch'>('charts');
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<youtubeService.PlaylistSearchResult[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -40,6 +40,12 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
     const [selectedGenre, setSelectedGenre] = useState(GENRE_CHARTS[0]);
     const [genreVideos, setGenreVideos] = useState<youtubeService.YouTubeSearchResult[]>([]);
     const [isGenreLoading, setIsGenreLoading] = useState(false);
+
+    // Song search state
+    const [songSearchQuery, setSongSearchQuery] = useState('');
+    const [songSearchResults, setSongSearchResults] = useState<youtubeService.YouTubeSearchResult[]>([]);
+    const [isSongSearchLoading, setIsSongSearchLoading] = useState(false);
+    const [selectedSongs, setSelectedSongs] = useState<Set<string>>(new Set());
 
     const playlistsByCategory = getPlaylistsByCategory();
 
@@ -110,6 +116,58 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
         }
     };
 
+    // Song search handlers
+    const handleSongSearch = async () => {
+        if (!songSearchQuery.trim()) return;
+
+        setIsSongSearchLoading(true);
+        setSelectedSongs(new Set()); // Reset selection on new search
+        try {
+            const results = await youtubeService.searchYouTube(songSearchQuery.trim(), 20);
+            setSongSearchResults(results);
+        } catch (error) {
+            console.error('Song search error:', error);
+            setSongSearchResults([]);
+        } finally {
+            setIsSongSearchLoading(false);
+        }
+    };
+
+    const toggleSongSelection = (videoId: string) => {
+        setSelectedSongs(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(videoId)) {
+                newSet.delete(videoId);
+            } else {
+                newSet.add(videoId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleAddSelectedSongs = () => {
+        if (onSelectVideos && selectedSongs.size > 0) {
+            const videos: Video[] = songSearchResults
+                .filter(v => selectedSongs.has(v.id))
+                .map(v => ({
+                    id: v.id,
+                    title: v.title,
+                    channelTitle: v.channelTitle,
+                    thumbnail: v.thumbnail
+                }));
+            onSelectVideos(videos);
+            onClose();
+        }
+    };
+
+    const selectAllSongs = () => {
+        setSelectedSongs(new Set(songSearchResults.map(v => v.id)));
+    };
+
+    const deselectAllSongs = () => {
+        setSelectedSongs(new Set());
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -163,8 +221,18 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                             : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
                             }`}
                     >
-                        <Search size={18} />
+                        <ListMusic size={18} />
                         재생목록 검색
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('songSearch')}
+                        className={`flex-1 py-4 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'songSearch'
+                            ? 'text-white bg-gradient-to-r from-green-600/20 to-transparent border-b-2 border-green-500'
+                            : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                            }`}
+                    >
+                        <Search size={18} />
+                        🎵 노래 검색
                     </button>
                 </div>
 
@@ -310,7 +378,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 </div>
                             ))}
                         </div>
-                    ) : (
+                    ) : activeTab === 'search' ? (
                         <div className="space-y-5">
                             {/* Search Input */}
                             <div className="flex items-center gap-3">
@@ -388,7 +456,128 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 </div>
                             )}
                         </div>
-                    )}
+                    ) : activeTab === 'songSearch' ? (
+                        <div className="space-y-5">
+                            {/* Song Search Input */}
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 flex items-center bg-gray-800/80 rounded-xl px-4 py-3 border border-gray-600 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
+                                    <Search size={20} className="text-gray-400 mr-3" />
+                                    <input
+                                        type="text"
+                                        placeholder="노래 검색... (예: IU 밤편지, BTS Dynamite)"
+                                        className="bg-transparent border-none focus:outline-none text-white w-full placeholder-gray-500 text-lg"
+                                        value={songSearchQuery}
+                                        onChange={(e) => setSongSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSongSearch()}
+                                        autoFocus={activeTab === 'songSearch'}
+                                    />
+                                    {songSearchQuery && (
+                                        <button onClick={() => setSongSearchQuery('')} className="text-gray-500 hover:text-white mr-2">
+                                            <X size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={handleSongSearch}
+                                    disabled={isSongSearchLoading}
+                                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white px-6 py-3 rounded-xl transition-colors font-medium flex items-center gap-2"
+                                >
+                                    {isSongSearchLoading ? <Loader2 size={20} className="animate-spin" /> : <Search size={20} />}
+                                    검색
+                                </button>
+                            </div>
+
+                            {/* Selection Controls */}
+                            {songSearchResults.length > 0 && (
+                                <div className="flex items-center justify-between bg-gray-800/50 rounded-xl px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-gray-400">
+                                            {selectedSongs.size > 0 ? (
+                                                <span className="text-green-400 font-medium">{selectedSongs.size}곡 선택됨</span>
+                                            ) : (
+                                                '노래를 선택하세요'
+                                            )}
+                                        </span>
+                                        <button
+                                            onClick={selectAllSongs}
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                        >
+                                            전체 선택
+                                        </button>
+                                        <button
+                                            onClick={deselectAllSongs}
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                        >
+                                            선택 해제
+                                        </button>
+                                    </div>
+                                    {selectedSongs.size > 0 && onSelectVideos && (
+                                        <button
+                                            onClick={handleAddSelectedSongs}
+                                            className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg"
+                                        >
+                                            <Plus size={16} />
+                                            선택한 {selectedSongs.size}곡 추가
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Song Search Results */}
+                            {isSongSearchLoading ? (
+                                <div className="flex items-center justify-center py-16">
+                                    <Loader2 size={40} className="text-green-400 animate-spin" />
+                                </div>
+                            ) : songSearchResults.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2">
+                                    {songSearchResults.map((video, index) => (
+                                        <button
+                                            key={video.id}
+                                            onClick={() => toggleSongSelection(video.id)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group ${selectedSongs.has(video.id)
+                                                ? 'bg-green-600/20 border-2 border-green-500'
+                                                : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
+                                                }`}
+                                        >
+                                            {/* Checkbox */}
+                                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${selectedSongs.has(video.id)
+                                                ? 'bg-green-500 text-white'
+                                                : 'bg-gray-700 border border-gray-600'
+                                                }`}>
+                                                {selectedSongs.has(video.id) && (
+                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <img
+                                                src={video.thumbnail}
+                                                alt={video.title}
+                                                className="w-16 h-12 object-cover rounded-lg"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm font-medium line-clamp-1 transition-colors ${selectedSongs.has(video.id) ? 'text-green-400' : 'text-white group-hover:text-green-400'
+                                                    }`}>
+                                                    {video.title}
+                                                </p>
+                                                <p className="text-gray-500 text-xs">{video.channelTitle}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                                    <div className="w-24 h-24 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
+                                        <Music size={48} className="opacity-50" />
+                                    </div>
+                                    <p className="text-lg">노래를 검색하세요</p>
+                                    <p className="text-sm mt-2 text-gray-500">
+                                        여러 곡을 선택해서 한 번에 추가할 수 있어요!
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </div>

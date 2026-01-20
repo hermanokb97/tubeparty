@@ -38,6 +38,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
   const getUser = (userId: string) => users.find(u => u.id === userId);
 
+  const humanUsers = users.filter(u => !u.isAi);
+
   return (
     <div className="flex flex-col h-full bg-brand-gray/30 rounded-lg border border-brand-gray overflow-hidden">
       {/* Header */}
@@ -45,8 +47,32 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         <h3 className="font-semibold text-white">실시간 채팅</h3>
         <div className="flex items-center space-x-2 text-xs text-gray-400">
           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          <span>{users.length}명 참여중</span>
+          <span>{humanUsers.length}명 참여중</span>
         </div>
+      </div>
+
+      {/* Participants Bar - Always visible */}
+      <div className="px-3 py-2 bg-brand-dark/30 border-b border-brand-gray/50 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+        <span className="text-xs text-gray-500 shrink-0">👥 참여자:</span>
+        {humanUsers.length > 0 ? (
+          humanUsers.map((user) => (
+            <div
+              key={user.id}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs shrink-0 ${user.id === currentUser.id
+                  ? 'bg-brand-red/20 text-brand-red border border-brand-red/30'
+                  : 'bg-gray-700/50 text-gray-300 border border-gray-600/30'
+                }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-gray-600 flex items-center justify-center">
+                <UserIcon size={10} />
+              </div>
+              <span>{user.name}</span>
+              {user.id === currentUser.id && <span className="text-[10px]">(나)</span>}
+            </div>
+          ))
+        ) : (
+          <span className="text-xs text-gray-500">아직 아무도 없어요</span>
+        )}
       </div>
 
       {/* Messages List */}

@@ -124,6 +124,45 @@ export const subscribeToMessages = (
     return unsubscribe;
 };
 
+// User management for room
+interface RoomUser {
+    id: string;
+    name: string;
+    joinedAt: number;
+}
+
+// Add user to room
+export const addUserToRoom = async (roomId: string, user: { id: string; name: string }): Promise<void> => {
+    await set(ref(database, `rooms/${roomId}/users/${user.id}`), {
+        id: user.id,
+        name: user.name,
+        joinedAt: Date.now()
+    });
+};
+
+// Remove user from room
+export const removeUserFromRoom = async (roomId: string, odedUserId: string): Promise<void> => {
+    await remove(ref(database, `rooms/${roomId}/users/${odedUserId}`));
+};
+
+// Subscribe to room users
+export const subscribeToUsers = (
+    roomId: string,
+    onUpdate: (users: RoomUser[]) => void
+): (() => void) => {
+    const usersRef = ref(database, `rooms/${roomId}/users`);
+    const unsubscribe = onValue(usersRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            const users = Object.values(data) as RoomUser[];
+            onUpdate(users.sort((a, b) => a.joinedAt - b.joinedAt));
+        } else {
+            onUpdate([]);
+        }
+    });
+    return unsubscribe;
+};
+
 // Delete room (optional cleanup)
 export const deleteRoom = async (roomId: string): Promise<void> => {
     await remove(ref(database, `rooms/${roomId}`));
