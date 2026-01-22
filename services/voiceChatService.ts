@@ -47,7 +47,6 @@ interface VoiceChatCallbacks {
     onUserLeft: (userId: string) => void;
     onError: (error: Error) => void;
     onConnectionStateChange?: (userId: string, state: string) => void;
-    onJoinComplete?: () => void; // 방 참가 완료 (마이크 준비됨)
     onStatusChange?: (status: string) => void; // 전체 상태 변경
 }
 
@@ -118,7 +117,6 @@ export class VoiceChatService {
         
         // 참가 완료 알림
         this.callbacks.onStatusChange?.('✅ 연결됨 - 다른 참가자 대기 중');
-        this.callbacks.onJoinComplete?.();
     }
 
     async leave(): Promise<void> {

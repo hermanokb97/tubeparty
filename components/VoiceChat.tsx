@@ -88,26 +88,10 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         setAudioStatus(status);
     }, []);
 
-    // Handle join complete
-    const handleJoinComplete = useCallback(() => {
-        console.log('[VoiceChat UI] Join complete');
-        setIsJoined(true);
-        setIsConnecting(false);
-    }, []);
-
     // Join voice chat
     const handleJoin = async () => {
         setIsConnecting(true);
         setAudioStatus('🎤 연결 중...');
-        
-        // 타임아웃 설정 (15초)
-        const timeout = setTimeout(() => {
-            if (isConnecting && !isJoined) {
-                setAudioStatus('⚠️ 연결 시간 초과');
-                setIsConnecting(false);
-                handleError(new Error('연결 시간이 초과되었습니다. 다시 시도해주세요.'));
-            }
-        }, 15000);
         
         try {
             voiceChatRef.current = new VoiceChatService(roomId, userId, {
@@ -115,15 +99,15 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 onUserLeft: handleUserLeft,
                 onError: handleError,
                 onConnectionStateChange: handleConnectionStateChange,
-                onJoinComplete: handleJoinComplete,
                 onStatusChange: handleStatusChange,
             });
 
             await voiceChatRef.current.join();
-            clearTimeout(timeout);
+            setIsJoined(true);
+            setAudioStatus('✅ 연결됨');
         } catch (error) {
-            clearTimeout(timeout);
             handleError(error as Error);
+        } finally {
             setIsConnecting(false);
         }
     };
