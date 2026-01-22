@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { SkipForward, Users } from 'lucide-react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
+import { SkipForward, Users, Radio } from 'lucide-react';
 
 export interface PlaybackSyncState {
   currentTime: number;
@@ -294,8 +294,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [videoId, initPlayer]);
 
+  const [syncFeedback, setSyncFeedback] = useState(false);
+
   const handleManualSkip = () => {
     onVideoError?.();
+  };
+
+  // 수동으로 현재 위치 동기화 (다른 사람들을 내 위치로)
+  const handleManualSync = () => {
+    if (!onPlaybackSyncRef.current || !playerRef.current || !currentUserId || !syncEnabled) return;
+    
+    try {
+      const currentTime = playerRef.current.getCurrentTime?.() || 0;
+      const playerState = playerRef.current.getPlayerState?.();
+      const isPlaying = playerState === 1;
+      
+      console.log(`[Sync] Manual sync triggered: ${currentTime.toFixed(1)}s, playing: ${isPlaying}`);
+      
+      // 강제로 동기화 (throttle 무시)
+      lastSyncTimeRef.current = 0;
+      
+      onPlaybackSyncRef.current({
+        currentTime,
+        isPlaying,
+        videoId,
+        syncedBy: currentUserId
+      });
+      
+      // 피드백 표시
+      setSyncFeedback(true);
+      setTimeout(() => setSyncFeedback(false), 2000);
+      
+    } catch (e) {
+      console.error('Error manual sync:', e);
+    }
   };
 
   return (
@@ -305,11 +337,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         className="absolute top-0 left-0 w-full h-full"
       />
 
-      {/* Sync indicator */}
+      {/* Sync indicator & Manual sync button */}
       {syncEnabled && (
-        <div className="absolute top-4 left-4 bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs z-10">
-          <Users size={12} />
-          <span>동기화 중</span>
+        <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+          <div className="bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs">
+            <Users size={12} />
+            <span>동기화 중</span>
+          </div>
+          <button
+            onClick={handleManualSync}
+            className={`px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all ${
+              syncFeedback 
+                ? 'bg-green-500 text-white' 
+                : 'bg-black/70 text-yellow-400 hover:bg-yellow-500 hover:text-black'
+            }`}
+            title="현재 재생 위치를 다른 사람들에게 공유"
+          >
+            <Radio size={12} className={syncFeedback ? 'animate-pulse' : ''} />
+            <span>{syncFeedback ? '전송됨!' : '지금 위치 공유'}</span>
+          </button>
         </div>
       )}
 
