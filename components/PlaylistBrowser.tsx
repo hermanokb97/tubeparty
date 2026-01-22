@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, ListMusic, Plus, Loader2, Sparkles, TrendingUp, Music, RefreshCw } from 'lucide-react';
+import { Search, X, ListMusic, Plus, Loader2, Sparkles, TrendingUp, Music, RefreshCw, Play, ListPlus } from 'lucide-react';
 import * as youtubeService from '../services/youtubeService';
 import { getPlaylistsByCategory } from '../constants';
 import { Video } from '../types';
@@ -17,11 +17,13 @@ const GENRE_CHARTS = [
     { id: 'indie', name: 'Indie', emoji: '🎸', query: 'indie music 2024', color: 'from-green-500 to-teal-600' },
 ];
 
+export type AddMode = 'playNow' | 'playNext';
+
 interface PlaylistBrowserProps {
     isOpen: boolean;
     onClose: () => void;
     onSelectPlaylist: (playlistId: string, title: string) => void;
-    onSelectVideos?: (videos: Video[]) => void;
+    onSelectVideos?: (videos: Video[], mode: AddMode) => void;
 }
 
 export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
@@ -47,6 +49,9 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
     const [songSearchResults, setSongSearchResults] = useState<youtubeService.YouTubeSearchResult[]>([]);
     const [isSongSearchLoading, setIsSongSearchLoading] = useState(false);
     const [selectedSongs, setSelectedSongs] = useState<Set<string>>(new Set());
+
+    // Action modal state for Play Now / Play Next selection
+    const [actionModalVideo, setActionModalVideo] = useState<youtubeService.YouTubeSearchResult | null>(null);
 
     const playlistsByCategory = getPlaylistsByCategory();
 
@@ -83,7 +88,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
         });
     };
 
-    const handleAddSelectedGenreVideos = () => {
+    const handleAddSelectedGenreVideos = (mode: AddMode) => {
         if (onSelectVideos && selectedGenreVideos.size > 0) {
             const videos: Video[] = genreVideos
                 .filter(v => selectedGenreVideos.has(v.id))
@@ -93,7 +98,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     channelTitle: v.channelTitle,
                     thumbnail: v.thumbnail
                 }));
-            onSelectVideos(videos);
+            onSelectVideos(videos, mode);
             onClose();
         }
     };
@@ -128,7 +133,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
         onClose();
     };
 
-    const handleSelectAllGenreVideos = () => {
+    const handleSelectAllGenreVideos = (mode: AddMode) => {
         if (onSelectVideos && genreVideos.length > 0) {
             const videos: Video[] = genreVideos.map(v => ({
                 id: v.id,
@@ -136,19 +141,25 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                 channelTitle: v.channelTitle,
                 thumbnail: v.thumbnail
             }));
-            onSelectVideos(videos);
+            onSelectVideos(videos, mode);
             onClose();
         }
     };
 
-    const handleSelectSingleVideo = (video: youtubeService.YouTubeSearchResult) => {
+    // Show action modal for single video selection
+    const showVideoActionModal = (video: youtubeService.YouTubeSearchResult) => {
+        setActionModalVideo(video);
+    };
+
+    const handleSelectSingleVideo = (video: youtubeService.YouTubeSearchResult, mode: AddMode) => {
         if (onSelectVideos) {
             onSelectVideos([{
                 id: video.id,
                 title: video.title,
                 channelTitle: video.channelTitle,
                 thumbnail: video.thumbnail
-            }]);
+            }], mode);
+            setActionModalVideo(null);
             onClose();
         }
     };
@@ -182,7 +193,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
         });
     };
 
-    const handleAddSelectedSongs = () => {
+    const handleAddSelectedSongs = (mode: AddMode) => {
         if (onSelectVideos && selectedSongs.size > 0) {
             const videos: Video[] = songSearchResults
                 .filter(v => selectedSongs.has(v.id))
@@ -192,7 +203,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     channelTitle: v.channelTitle,
                     thumbnail: v.thumbnail
                 }));
-            onSelectVideos(videos);
+            onSelectVideos(videos, mode);
             onClose();
         }
     };
@@ -372,14 +383,14 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                             key={video.id}
                                             onClick={() => toggleGenreVideoSelection(video.id)}
                                             className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group ${selectedGenreVideos.has(video.id)
-                                                    ? 'bg-orange-600/20 border-2 border-orange-500'
-                                                    : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
+                                                ? 'bg-orange-600/20 border-2 border-orange-500'
+                                                : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
                                                 }`}
                                         >
                                             {/* Checkbox */}
                                             <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${selectedGenreVideos.has(video.id)
-                                                    ? 'bg-orange-500 text-white'
-                                                    : 'bg-gray-700 border border-gray-600'
+                                                ? 'bg-orange-500 text-white'
+                                                : 'bg-gray-700 border border-gray-600'
                                                 }`}>
                                                 {selectedGenreVideos.has(video.id) && (
                                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

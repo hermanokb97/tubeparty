@@ -1,8 +1,130 @@
 import React, { useState } from 'react';
-import { Play, Sparkles, Shuffle, Repeat, Repeat1, Save, FolderOpen, X, Trash2, Music } from 'lucide-react';
+import { Play, Sparkles, Shuffle, Repeat, Repeat1, Save, FolderOpen, X, Trash2, Music, GripVertical } from 'lucide-react';
 import { Video, SavedPlaylist } from '../types';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 export type RepeatMode = 'off' | 'all' | 'one';
+
+// Sortable Video Item Component
+interface SortableVideoItemProps {
+  video: Video;
+  index: number;
+  currentVideoId: string;
+  onSelectVideo: (video: Video) => void;
+  onRemoveVideo?: (id: string) => void;
+}
+
+const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
+  video,
+  index,
+  currentVideoId,
+  onSelectVideo,
+  onRemoveVideo,
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: video.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex gap-3 p-2 rounded-lg transition-all group
+        ${currentVideoId === video.id
+          ? 'bg-brand-red/20 border border-brand-red/50'
+          : 'hover:bg-white/5 border border-transparent'}`}
+    >
+      {/* Drag Handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 p-1 text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing touch-none"
+        title="드래그해서 순서 변경"
+      >
+        <GripVertical size={16} />
+      </button>
+
+      {/* Number */}
+      <div className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-xs">
+        {currentVideoId === video.id ? (
+          <div className="w-3 h-3 bg-brand-red rounded-full animate-pulse"></div>
+        ) : (
+          <span className="text-gray-500">{index + 1}</span>
+        )}
+      </div>
+
+      {/* Thumbnail - Clickable */}
+      <div
+        onClick={() => onSelectVideo(video)}
+        className="relative w-20 h-12 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer"
+      >
+        <img
+          src={video.thumbnail}
+          alt={video.title}
+          className="w-full h-full object-cover"
+        />
+        {currentVideoId === video.id && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <span className="text-[9px] text-white font-bold bg-brand-red px-1.5 py-0.5 rounded">NOW</span>
+          </div>
+        )}
+      </div>
+
+      {/* Info - Clickable */}
+      <div
+        onClick={() => onSelectVideo(video)}
+        className="flex-1 min-w-0 flex flex-col justify-center cursor-pointer"
+      >
+        <h4 className={`text-sm font-medium line-clamp-1 ${currentVideoId === video.id ? 'text-brand-red' : 'text-gray-200'}`}>
+          {video.title}
+        </h4>
+        <p className="text-xs text-gray-500 line-clamp-1">
+          {video.channelTitle}
+        </p>
+      </div>
+
+      {/* Delete Button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemoveVideo?.(video.id);
+        }}
+        className="flex-shrink-0 p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
+        title="목록에서 삭제"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+};
 
 interface PlaylistProps {
   videos: Video[];
@@ -19,6 +141,7 @@ interface PlaylistProps {
   onLoadPlaylist?: (playlist: SavedPlaylist) => void;
   onDeletePlaylist?: (id: string) => void;
   onRemoveVideo?: (id: string) => void;
+  onReorderPlaylist?: (newOrder: Video[]) => void;
 }
 
 export const Playlist: React.FC<PlaylistProps> = ({
@@ -35,12 +158,36 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onSavePlaylist,
   onLoadPlaylist,
   onDeletePlaylist,
-  onRemoveVideo
+  onRemoveVideo,
+  onReorderPlaylist
 }) => {
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [playlistName, setPlaylistName] = useState('');
+
+  // DnD Sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = videos.findIndex((v) => v.id === active.id);
+      const newIndex = videos.findIndex((v) => v.id === over.id);
+      const newOrder = arrayMove(videos, oldIndex, newIndex);
+      onReorderPlaylist?.(newOrder);
+    }
+  };
 
   const handleSave = () => {
     if (playlistName.trim() && onSavePlaylist) {
@@ -211,63 +358,26 @@ export const Playlist: React.FC<PlaylistProps> = ({
             <p className="text-sm text-gray-600">위의 "AI 추천 받기"를 눌러보세요!</p>
           </div>
         ) : (
-          <div className="p-2 space-y-1">
-            {videos.map((video, index) => (
-              <div
-                key={video.id}
-                onClick={() => onSelectVideo(video)}
-                className={`flex gap-3 p-2 rounded-lg cursor-pointer transition-all group
-                  ${currentVideoId === video.id
-                    ? 'bg-brand-red/20 border border-brand-red/50'
-                    : 'hover:bg-white/5 border border-transparent'}`}
-              >
-                {/* Number */}
-                <div className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-xs">
-                  {currentVideoId === video.id ? (
-                    <div className="w-3 h-3 bg-brand-red rounded-full animate-pulse"></div>
-                  ) : (
-                    <span className="text-gray-500">{index + 1}</span>
-                  )}
-                </div>
-
-                {/* Thumbnail */}
-                <div className="relative w-20 h-12 bg-gray-800 rounded overflow-hidden flex-shrink-0">
-                  <img
-                    src={video.thumbnail}
-                    alt={video.title}
-                    className="w-full h-full object-cover"
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={videos.map(v => v.id)} strategy={verticalListSortingStrategy}>
+              <div className="p-2 space-y-1">
+                {videos.map((video, index) => (
+                  <SortableVideoItem
+                    key={video.id}
+                    video={video}
+                    index={index}
+                    currentVideoId={currentVideoId}
+                    onSelectVideo={onSelectVideo}
+                    onRemoveVideo={onRemoveVideo}
                   />
-                  {currentVideoId === video.id && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <span className="text-[9px] text-white font-bold bg-brand-red px-1.5 py-0.5 rounded">NOW</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <h4 className={`text-sm font-medium line-clamp-1 ${currentVideoId === video.id ? 'text-brand-red' : 'text-gray-200'}`}>
-                    {video.title}
-                  </h4>
-                  <p className="text-xs text-gray-500 line-clamp-1">
-                    {video.channelTitle}
-                  </p>
-                </div>
-
-                {/* Delete Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveVideo?.(video.id);
-                  }}
-                  className="flex-shrink-0 p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
-                  title="목록에서 삭제"
-                >
-                  <Trash2 size={14} />
-                </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
     </div>

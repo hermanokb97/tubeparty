@@ -94,10 +94,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, o
       events: {
         onStateChange: (event: any) => {
           console.log('YouTube State Change:', event.data);
-          // 0 = ended, 1 = playing, 2 = paused, 3 = buffering
+          // -1 = unstarted, 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = video cued
           if (event.data === 0) {
-            console.log('Video ended! Calling onVideoEnd...');
-            onVideoEndRef.current?.();
+            // 비디오가 실제로 끝났는지 확인 (광고 종료나 버퍼링 문제로 인한 false positive 방지)
+            const player = playerRef.current;
+            if (player && typeof player.getDuration === 'function' && typeof player.getCurrentTime === 'function') {
+              try {
+                const duration = player.getDuration();
+                const currentTime = player.getCurrentTime();
+                console.log(`Video state 0 - Duration: ${duration}s, CurrentTime: ${currentTime}s`);
+                
+                // 비디오 길이가 있고, 현재 시간이 총 시간의 90% 이상일 때만 끝난 것으로 처리
+                // 또는 비디오가 매우 짧은 경우 (10초 미만)는 바로 처리
+                if (duration > 0 && (currentTime / duration >= 0.9 || (duration < 10 && currentTime >= duration - 1))) {
+                  console.log('Video actually ended! Calling onVideoEnd...');
+                  onVideoEndRef.current?.();
+                } else {
+                  console.log('State 0 received but video not really ended (possibly ad ended or buffering issue), ignoring...');
+                }
+              } catch (e) {
+                console.error('Error checking video duration:', e);
+                // 에러 발생 시에도 onVideoEnd 호출하지 않음
+              }
+            }
           }
         },
         onError: (event: any) => {

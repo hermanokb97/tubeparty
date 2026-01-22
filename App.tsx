@@ -866,6 +866,13 @@ const App: React.FC = () => {
     }
   };
 
+  const handleReorderPlaylist = (newOrder: Video[]) => {
+    setPlaylist(newOrder);
+    if (currentRoom) {
+      firebaseService.updatePlaylist(currentRoom.id, newOrder);
+    }
+  };
+
   // Chat Handlers ---
 
   // --- Render ---
@@ -1265,6 +1272,7 @@ const App: React.FC = () => {
               onLoadPlaylist={handleLoadPlaylist}
               onDeletePlaylist={handleDeletePlaylist}
               onRemoveVideo={handleRemoveVideo}
+              onReorderPlaylist={handleReorderPlaylist}
             />
           </div>
         </section>
