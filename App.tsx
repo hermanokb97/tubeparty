@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Message, User, Video, TabType, SyncAction, SavedPlaylist, Room } from './types';
 import { VideoPlayer, PlaybackSyncState } from './components/VideoPlayer';
 import { ChatRoom } from './components/ChatRoom';
@@ -74,6 +74,9 @@ const App: React.FC = () => {
   // Playback Sync State (재생 구간 동기화)
   const [playbackSyncState, setPlaybackSyncState] = useState<PlaybackSyncState | null>(null);
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
+
+  // 이전 사용자 목록 (입장/퇴장 감지용)
+  const prevUsersRef = useRef<Set<string>>(new Set());
 
   // --- Session Restore on Page Load ---
   useEffect(() => {
@@ -224,10 +227,46 @@ const App: React.FC = () => {
 
   // --- Firebase Real-time Users ---
   useEffect(() => {
-    if (!hasJoined || !currentRoom) return;
+    if (!hasJoined || !currentRoom || !currentUser) return;
 
     // Subscribe to users from Firebase
     const unsubscribe = firebaseService.subscribeToUsers(currentRoom.id, (firebaseUsers) => {
+      const currentUserIds = new Set(firebaseUsers.map(u => u.id));
+      const prevUserIds = prevUsersRef.current;
+
+      // 입장한 사용자 찾기 (이전에 없었는데 지금 있는 사용자)
+      firebaseUsers.forEach(fu => {
+        // 자기 자신은 제외, 이전에 없었던 사용자만
+        if (fu.id !== currentUser.id && !prevUserIds.has(fu.id)) {
+          setMessages(prev => [...prev, {
+            id: `join-${fu.id}-${Date.now()}`,
+            userId: 'ai-1',
+            text: `👋 ${fu.name}님이 입장했습니다!`,
+            timestamp: Date.now()
+          }]);
+        }
+      });
+
+      // 퇴장한 사용자 찾기 (이전에 있었는데 지금 없는 사용자)
+      prevUserIds.forEach(prevId => {
+        // 자기 자신은 제외
+        if (prevId !== currentUser.id && !currentUserIds.has(prevId)) {
+          // 이전 사용자 이름 찾기 (users state에서)
+          const leftUser = users.find(u => u.id === prevId);
+          const userName = leftUser?.name || '알 수 없는 사용자';
+          
+          setMessages(prev => [...prev, {
+            id: `leave-${prevId}-${Date.now()}`,
+            userId: 'ai-1',
+            text: `🚪 ${userName}님이 퇴장했습니다.`,
+            timestamp: Date.now()
+          }]);
+        }
+      });
+
+      // 현재 사용자 목록 저장
+      prevUsersRef.current = currentUserIds;
+
       // Keep the AI user and add Firebase users
       setUsers(prev => {
         const aiUser = prev.find(u => u.isAi);
@@ -247,7 +286,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [hasJoined, currentRoom?.id]);
+  }, [hasJoined, currentRoom?.id, currentUser?.id]);
 
   // --- Firebase Real-time Playback Sync ---
   useEffect(() => {

@@ -13,12 +13,31 @@ const getDb = (): Database => {
 };
 
 // STUN/TURN servers for NAT traversal
+// 무료 공개 TURN 서버 포함 (OpenRelay 프로젝트)
 const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
+        // Google STUN servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
+        // OpenRelay TURN servers (무료, https://www.metered.ca/tools/openrelay/)
+        {
+            urls: 'stun:openrelay.metered.ca:80',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
     ],
     iceCandidatePoolSize: 10,
 };
@@ -27,6 +46,7 @@ interface VoiceChatCallbacks {
     onRemoteStream: (userId: string, stream: MediaStream) => void;
     onUserLeft: (userId: string) => void;
     onError: (error: Error) => void;
+    onConnectionStateChange?: (userId: string, state: string) => void;
 }
 
 export class VoiceChatService {
@@ -160,16 +180,30 @@ export class VoiceChatService {
 
         pc.oniceconnectionstatechange = () => {
             console.log('[VoiceChat] ICE state:', pc.iceConnectionState);
+            this.callbacks.onConnectionStateChange?.(remoteUserId, `ICE: ${pc.iceConnectionState}`);
+            
             if (pc.iceConnectionState === 'failed') {
+                console.log('[VoiceChat] ICE failed, restarting...');
                 pc.restartIce();
+            } else if (pc.iceConnectionState === 'connected') {
+                console.log('[VoiceChat] ICE connected successfully!');
             }
         };
 
         pc.onconnectionstatechange = () => {
             console.log('[VoiceChat] Connection state:', pc.connectionState);
-            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            this.callbacks.onConnectionStateChange?.(remoteUserId, `연결: ${pc.connectionState}`);
+            
+            if (pc.connectionState === 'connected') {
+                console.log('[VoiceChat] Peer connected successfully!');
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 this.handleUserDisconnected(remoteUserId);
             }
+        };
+        
+        // ICE gathering 상태 모니터링
+        pc.onicegatheringstatechange = () => {
+            console.log('[VoiceChat] ICE gathering state:', pc.iceGatheringState);
         };
 
         this.peerConnections.set(remoteUserId, pc);

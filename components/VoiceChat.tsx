@@ -75,6 +75,12 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         onError?.(error.message);
     }, [onError]);
 
+    // Handle connection state change
+    const handleConnectionStateChange = useCallback((userId: string, state: string) => {
+        console.log('[VoiceChat UI] Connection state:', userId, state);
+        setAudioStatus(state);
+    }, []);
+
     // Join voice chat
     const handleJoin = async () => {
         setIsConnecting(true);
@@ -84,6 +90,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 onRemoteStream: handleRemoteStream,
                 onUserLeft: handleUserLeft,
                 onError: handleError,
+                onConnectionStateChange: handleConnectionStateChange,
             });
 
             await voiceChatRef.current.join();
@@ -149,17 +156,21 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 audio.playsInline = true;
                 audio.volume = 1.0;
                 audio.style.display = 'none';
+                
+                // 크로스 브라우저 호환성
+                (audio as any).webkitPlaysInline = true;
+                
                 document.body.appendChild(audio);
                 audioRefs.current.set(user.odedUserId, audio);
 
                 // Debug events
                 audio.onplay = () => {
                     console.log('[VoiceChat UI] Audio playing for:', user.odedUserId);
-                    setAudioStatus(`Playing audio from ${user.odedUserId.slice(-6)}`);
+                    setAudioStatus(`🔊 음성 수신 중`);
                 };
                 audio.onerror = (e) => {
                     console.error('[VoiceChat UI] Audio error:', e);
-                    setAudioStatus('Audio error');
+                    setAudioStatus('오디오 오류');
                 };
                 audio.onloadedmetadata = () => {
                     console.log('[VoiceChat UI] Audio metadata loaded');
@@ -171,19 +182,25 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 audio.srcObject = user.stream;
                 audio.muted = isDeafened;
 
-                // Force play
-                const playPromise = audio.play();
-                if (playPromise !== undefined) {
-                    playPromise
-                        .then(() => {
-                            console.log('[VoiceChat UI] Audio playback started successfully');
-                            setAudioStatus('Audio playing');
-                        })
-                        .catch(err => {
-                            console.error('[VoiceChat UI] Audio play failed:', err);
-                            setAudioStatus(`Play failed: ${err.name}`);
-                        });
-                }
+                // Force play with retry
+                const tryPlay = async (retries = 3) => {
+                    try {
+                        await audio!.play();
+                        console.log('[VoiceChat UI] Audio playback started successfully');
+                        setAudioStatus('🔊 음성 수신 중');
+                    } catch (err: any) {
+                        console.error('[VoiceChat UI] Audio play failed:', err);
+                        if (err.name === 'NotAllowedError' && retries > 0) {
+                            // 자동 재생 정책으로 인한 실패 - 약간의 지연 후 재시도
+                            setAudioStatus('🔇 클릭하여 소리 켜기');
+                            setTimeout(() => tryPlay(retries - 1), 1000);
+                        } else {
+                            setAudioStatus(`재생 실패: ${err.name}`);
+                        }
+                    }
+                };
+                
+                tryPlay();
             }
         });
     }, [remoteUsers, isDeafened]);
@@ -231,15 +248,15 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         <div className="flex items-center gap-2 bg-gray-800/80 rounded-full px-3 py-1.5 border border-gray-700">
             {/* Status indicator */}
             <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
                 <span className="text-xs text-gray-400">
                     {remoteUsers.length > 0 ? (
                         <span className="flex items-center gap-1">
                             <Users size={12} />
-                            {remoteUsers.length + 1}명
+                            {remoteUsers.length + 1}명 연결됨
                         </span>
                     ) : (
-                        '음성 연결됨'
+                        <span title={audioStatus}>대기 중...</span>
                     )}
                 </span>
             </div>
