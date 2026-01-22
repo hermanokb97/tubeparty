@@ -167,3 +167,37 @@ export const subscribeToUsers = (
 export const deleteRoom = async (roomId: string): Promise<void> => {
     await remove(ref(database, `rooms/${roomId}`));
 };
+
+// ===== Playback Sync (재생 구간 동기화) =====
+
+export interface PlaybackState {
+    currentTime: number;      // 현재 재생 시간 (초)
+    isPlaying: boolean;       // 재생 중 여부
+    videoId: string;          // 현재 비디오 ID
+    syncedBy: string;         // 동기화를 트리거한 유저 ID
+    syncedAt: number;         // 동기화 시점 (timestamp)
+}
+
+// Update playback state (seek, play/pause)
+export const updatePlaybackState = async (
+    roomId: string,
+    state: PlaybackState
+): Promise<void> => {
+    await set(ref(database, `rooms/${roomId}/playbackState`), state);
+};
+
+// Subscribe to playback state changes
+export const subscribeToPlaybackState = (
+    roomId: string,
+    onUpdate: (state: PlaybackState | null) => void
+): (() => void) => {
+    const playbackRef = ref(database, `rooms/${roomId}/playbackState`);
+    const unsubscribe = onValue(playbackRef, (snapshot) => {
+        if (snapshot.exists()) {
+            onUpdate(snapshot.val() as PlaybackState);
+        } else {
+            onUpdate(null);
+        }
+    });
+    return unsubscribe;
+};

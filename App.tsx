@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message, User, Video, TabType, SyncAction, SavedPlaylist, Room } from './types';
-import { VideoPlayer } from './components/VideoPlayer';
+import { VideoPlayer, PlaybackSyncState } from './components/VideoPlayer';
 import { ChatRoom } from './components/ChatRoom';
 import { Playlist, RepeatMode } from './components/Playlist';
 import { Onboarding } from './components/Onboarding';
@@ -14,7 +14,7 @@ import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
-import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut } from 'lucide-react';
+import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut, Users, UserX } from 'lucide-react';
 
 // Initial Data
 const SYSTEM_AI: User = { id: 'ai-1', name: 'TubeBot', avatar: '', isAi: true };
@@ -70,6 +70,10 @@ const App: React.FC = () => {
 
   // Playlist Browser State
   const [showPlaylistBrowser, setShowPlaylistBrowser] = useState(false);
+
+  // Playback Sync State (재생 구간 동기화)
+  const [playbackSyncState, setPlaybackSyncState] = useState<PlaybackSyncState | null>(null);
+  const [isSyncEnabled, setIsSyncEnabled] = useState(true);
 
   // --- Session Restore on Page Load ---
   useEffect(() => {
@@ -244,6 +248,20 @@ const App: React.FC = () => {
 
     return () => unsubscribe();
   }, [hasJoined, currentRoom?.id]);
+
+  // --- Firebase Real-time Playback Sync ---
+  useEffect(() => {
+    if (!hasJoined || !currentRoom || !isSyncEnabled) return;
+
+    // Subscribe to playback state from Firebase
+    const unsubscribe = firebaseService.subscribeToPlaybackState(currentRoom.id, (state) => {
+      if (state) {
+        setPlaybackSyncState(state);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [hasJoined, currentRoom?.id, isSyncEnabled]);
 
   // --- Handlers ---
 
@@ -873,6 +891,23 @@ const App: React.FC = () => {
     }
   };
 
+  // Playback Sync Handler
+  const handlePlaybackSync = useCallback((state: Omit<PlaybackSyncState, 'syncedAt'>) => {
+    if (!currentRoom || !isSyncEnabled) return;
+    
+    const fullState: firebaseService.PlaybackState = {
+      ...state,
+      syncedAt: Date.now()
+    };
+    
+    firebaseService.updatePlaybackState(currentRoom.id, fullState);
+  }, [currentRoom, isSyncEnabled]);
+
+  // Toggle Sync
+  const handleToggleSync = () => {
+    setIsSyncEnabled(prev => !prev);
+  };
+
   // Chat Handlers ---
 
   // --- Render ---
@@ -1058,6 +1093,20 @@ const App: React.FC = () => {
             <span className="hidden sm:inline">재생목록</span>
           </button>
 
+          {/* Sync Toggle Button */}
+          <button
+            onClick={handleToggleSync}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+              isSyncEnabled
+                ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
+                : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
+            }`}
+            title={isSyncEnabled ? '동기화 끄기' : '동기화 켜기'}
+          >
+            {isSyncEnabled ? <Users size={14} /> : <UserX size={14} />}
+            <span className="hidden sm:inline">{isSyncEnabled ? '동기화' : '개별재생'}</span>
+          </button>
+
           {/* Invite Button */}
           <button
             onClick={handleShare}
@@ -1236,6 +1285,10 @@ const App: React.FC = () => {
                 }]);
               }
             }}
+            currentUserId={currentUser?.id}
+            syncState={playbackSyncState}
+            onPlaybackSync={handlePlaybackSync}
+            syncEnabled={isSyncEnabled}
           />
 
           <div className="bg-brand-gray/30 p-4 rounded-lg border border-brand-gray flex justify-between items-start">

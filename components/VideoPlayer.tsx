@@ -1,10 +1,23 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { SkipForward } from 'lucide-react';
+import { SkipForward, Users } from 'lucide-react';
+
+export interface PlaybackSyncState {
+  currentTime: number;
+  isPlaying: boolean;
+  videoId: string;
+  syncedBy: string;
+  syncedAt: number;
+}
 
 interface VideoPlayerProps {
   videoId: string;
   onVideoEnd?: () => void;
   onVideoError?: () => void;
+  // 동기화 관련 props
+  currentUserId?: string;
+  syncState?: PlaybackSyncState | null;
+  onPlaybackSync?: (state: Omit<PlaybackSyncState, 'syncedAt'>) => void;
+  syncEnabled?: boolean;
 }
 
 // Extend Window interface to include YouTube API
@@ -55,17 +68,112 @@ const loadYouTubeAPI = (): Promise<void> => {
   return apiLoadingPromise;
 };
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, onVideoError }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({
+  videoId,
+  onVideoEnd,
+  onVideoError,
+  currentUserId,
+  syncState,
+  onPlaybackSync,
+  syncEnabled = true
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const onVideoEndRef = useRef(onVideoEnd);
   const onVideoErrorRef = useRef(onVideoError);
+  const onPlaybackSyncRef = useRef(onPlaybackSync);
+  
+  // 동기화 관련 refs
+  const lastSyncTimeRef = useRef<number>(0);
+  const isSyncingRef = useRef<boolean>(false);
+  const lastAppliedSyncRef = useRef<number>(0);
 
   // Keep refs updated
   useEffect(() => {
     onVideoEndRef.current = onVideoEnd;
     onVideoErrorRef.current = onVideoError;
-  }, [onVideoEnd, onVideoError]);
+    onPlaybackSyncRef.current = onPlaybackSync;
+  }, [onVideoEnd, onVideoError, onPlaybackSync]);
+
+  // 동기화 상태 적용 (다른 사용자가 변경한 경우)
+  useEffect(() => {
+    if (!syncState || !playerRef.current || !syncEnabled) return;
+    if (!currentUserId) return;
+    
+    // 내가 트리거한 동기화면 무시
+    if (syncState.syncedBy === currentUserId) return;
+    
+    // 이미 적용한 동기화면 무시
+    if (syncState.syncedAt <= lastAppliedSyncRef.current) return;
+    
+    // 비디오 ID가 다르면 무시 (비디오 변경은 다른 로직에서 처리)
+    if (syncState.videoId !== videoId) return;
+    
+    const player = playerRef.current;
+    
+    try {
+      // 네트워크 지연 보정: syncedAt 이후 경과 시간을 더해줌
+      const elapsed = (Date.now() - syncState.syncedAt) / 1000;
+      const targetTime = syncState.currentTime + (syncState.isPlaying ? elapsed : 0);
+      
+      console.log(`[Sync] Applying sync from ${syncState.syncedBy}: ${targetTime.toFixed(1)}s, playing: ${syncState.isPlaying}`);
+      
+      isSyncingRef.current = true;
+      
+      // 시간 이동
+      if (typeof player.seekTo === 'function') {
+        player.seekTo(targetTime, true);
+      }
+      
+      // 재생/일시정지 상태 적용
+      if (syncState.isPlaying) {
+        if (typeof player.playVideo === 'function') {
+          player.playVideo();
+        }
+      } else {
+        if (typeof player.pauseVideo === 'function') {
+          player.pauseVideo();
+        }
+      }
+      
+      lastAppliedSyncRef.current = syncState.syncedAt;
+      
+      // 잠시 후 동기화 플래그 해제
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 1000);
+      
+    } catch (e) {
+      console.error('Error applying sync state:', e);
+      isSyncingRef.current = false;
+    }
+  }, [syncState, videoId, currentUserId, syncEnabled]);
+
+  // 동기화 브로드캐스트 함수
+  const broadcastSync = useCallback((isPlaying: boolean) => {
+    if (!onPlaybackSyncRef.current || !playerRef.current || !currentUserId || !syncEnabled) return;
+    if (isSyncingRef.current) return; // 동기화 적용 중이면 브로드캐스트하지 않음
+    
+    // 너무 자주 동기화하지 않도록 throttle (1초)
+    const now = Date.now();
+    if (now - lastSyncTimeRef.current < 1000) return;
+    lastSyncTimeRef.current = now;
+    
+    try {
+      const currentTime = playerRef.current.getCurrentTime?.() || 0;
+      
+      console.log(`[Sync] Broadcasting: ${currentTime.toFixed(1)}s, playing: ${isPlaying}`);
+      
+      onPlaybackSyncRef.current({
+        currentTime,
+        isPlaying,
+        videoId,
+        syncedBy: currentUserId
+      });
+    } catch (e) {
+      console.error('Error broadcasting sync:', e);
+    }
+  }, [videoId, currentUserId, syncEnabled]);
 
   const initPlayer = useCallback(async () => {
     await loadYouTubeAPI();
@@ -95,6 +203,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, o
         onStateChange: (event: any) => {
           console.log('YouTube State Change:', event.data);
           // -1 = unstarted, 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = video cued
+          
+          // 재생/일시정지 상태 변경시 동기화 브로드캐스트
+          if (event.data === 1) { // Playing
+            broadcastSync(true);
+          } else if (event.data === 2) { // Paused
+            broadcastSync(false);
+          }
+          
           if (event.data === 0) {
             // 비디오가 실제로 끝났는지 확인 (광고 종료나 버퍼링 문제로 인한 false positive 방지)
             const player = playerRef.current;
@@ -125,16 +241,49 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, o
         },
         onReady: (event: any) => {
           console.log('YouTube Player Ready');
+          
+          // 플레이어 준비되면 진행바 클릭(seek) 감지를 위한 폴링 시작
+          if (syncEnabled && currentUserId) {
+            let lastTime = 0;
+            const checkSeek = setInterval(() => {
+              if (!playerRef.current) {
+                clearInterval(checkSeek);
+                return;
+              }
+              try {
+                const currentTime = playerRef.current.getCurrentTime?.() || 0;
+                const playerState = playerRef.current.getPlayerState?.();
+                
+                // 2초 이상 점프했으면 seek으로 간주
+                if (Math.abs(currentTime - lastTime) > 2 && playerState === 1) {
+                  if (!isSyncingRef.current) {
+                    console.log(`[Sync] Seek detected: ${lastTime.toFixed(1)}s -> ${currentTime.toFixed(1)}s`);
+                    broadcastSync(true);
+                  }
+                }
+                lastTime = currentTime;
+              } catch (e) {
+                // ignore
+              }
+            }, 500);
+            
+            // cleanup용으로 저장
+            (playerRef.current as any).__seekCheckInterval = checkSeek;
+          }
         }
       }
     });
-  }, [videoId]);
+  }, [videoId, broadcastSync, syncEnabled, currentUserId]);
 
   useEffect(() => {
     initPlayer();
 
     return () => {
       if (playerRef.current) {
+        // seek 체크 인터벌 정리
+        if ((playerRef.current as any).__seekCheckInterval) {
+          clearInterval((playerRef.current as any).__seekCheckInterval);
+        }
         try {
           playerRef.current.destroy();
         } catch (e) {
@@ -155,6 +304,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoId, onVideoEnd, o
         ref={containerRef}
         className="absolute top-0 left-0 w-full h-full"
       />
+
+      {/* Sync indicator */}
+      {syncEnabled && (
+        <div className="absolute top-4 left-4 bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs z-10">
+          <Users size={12} />
+          <span>동기화 중</span>
+        </div>
+      )}
 
       {/* Skip button overlay */}
       <button
