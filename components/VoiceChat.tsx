@@ -306,25 +306,21 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             </button>
 
             {/* Voice Volume Control */}
-            <div 
-                className="relative flex items-center"
-                onMouseEnter={() => setShowVoiceVolumeSlider(true)}
-                onMouseLeave={() => setShowVoiceVolumeSlider(false)}
-            >
+            <div className="relative flex items-center">
                 <button
-                    onClick={handleToggleDeafen}
-                    className={`p-1 sm:p-1.5 rounded-full transition-colors ${isDeafened
+                    onClick={() => setShowVoiceVolumeSlider(!showVoiceVolumeSlider)}
+                    className={`p-1 sm:p-1.5 rounded-full transition-colors ${isDeafened || voiceVolume === 0
                         ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                         : 'hover:bg-gray-700 text-gray-300'
                         }`}
-                    title={isDeafened ? '스피커 켜기' : '스피커 끄기'}
+                    title="음성 볼륨 조절"
                 >
-                    {isDeafened ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                    {isDeafened || voiceVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
                 </button>
                 
-                {/* Voice Volume Slider */}
+                {/* Voice Volume Slider - 클릭으로 토글 */}
                 {showVoiceVolumeSlider && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg px-3 py-2 flex flex-col items-center gap-2 border border-gray-700 shadow-xl z-50">
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg p-3 flex flex-col items-center gap-2 border border-gray-700 shadow-xl z-50 min-w-[80px]">
                         <span className="text-xs text-green-400 whitespace-nowrap">🎤 음성</span>
                         <input
                             type="range"
@@ -332,12 +328,18 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                             max="100"
                             value={isDeafened ? 0 : voiceVolume}
                             onChange={(e) => handleVoiceVolumeChange(Number(e.target.value))}
-                            className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
+                            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
                             style={{ writingMode: 'horizontal-tb' }}
                         />
                         <span className="text-xs text-white">
                             {isDeafened ? '0' : voiceVolume}%
                         </span>
+                        <button
+                            onClick={handleToggleDeafen}
+                            className={`text-xs px-2 py-1 rounded ${isDeafened ? 'bg-red-500/30 text-red-400' : 'bg-gray-700 text-gray-300'}`}
+                        >
+                            {isDeafened ? '음소거 해제' : '음소거'}
+                        </button>
                     </div>
                 )}
             </div>

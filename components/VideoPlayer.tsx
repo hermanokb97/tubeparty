@@ -390,34 +390,38 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Bottom controls */}
       <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-10">
         {/* Music Volume Control */}
-        <div 
-          className="relative flex items-center gap-2"
-          onMouseEnter={() => setShowVolumeSlider(true)}
-          onMouseLeave={() => setShowVolumeSlider(false)}
-        >
+        <div className="relative flex items-center gap-2">
           <button
-            onClick={handleMusicMuteToggle}
+            onClick={() => setShowVolumeSlider(!showVolumeSlider)}
             className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
-            title={isMusicMuted ? '음악 소리 켜기' : '음악 소리 끄기'}
+            title="음악 볼륨 조절"
           >
             <Music size={14} className="text-purple-400" />
-            {isMusicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            {isMusicMuted || musicVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>
           
-          {/* Volume Slider */}
+          {/* Volume Slider - 클릭으로 토글 */}
           {showVolumeSlider && (
-            <div className="absolute left-full ml-2 bg-black/90 rounded-lg px-3 py-2 flex items-center gap-2 min-w-[140px]">
+            <div className="absolute bottom-full left-0 mb-2 bg-black/90 rounded-lg p-3 flex flex-col items-center gap-2 min-w-[60px] shadow-xl border border-gray-700">
+              <span className="text-xs text-purple-400">🎵 음악</span>
               <input
                 type="range"
                 min="0"
                 max="100"
                 value={isMusicMuted ? 0 : musicVolume}
                 onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
-                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                style={{ writingMode: 'horizontal-tb' }}
               />
-              <span className="text-xs text-white min-w-[32px]">
+              <span className="text-xs text-white">
                 {isMusicMuted ? '0' : musicVolume}%
               </span>
+              <button
+                onClick={handleMusicMuteToggle}
+                className={`text-xs px-2 py-1 rounded ${isMusicMuted ? 'bg-red-500/30 text-red-400' : 'bg-gray-700 text-gray-300'}`}
+              >
+                {isMusicMuted ? '음소거 해제' : '음소거'}
+              </button>
             </div>
           )}
         </div>
