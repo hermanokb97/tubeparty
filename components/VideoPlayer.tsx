@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { SkipForward, Users, Radio } from 'lucide-react';
+import { SkipForward, Users, Radio, Volume2, VolumeX, Music } from 'lucide-react';
 
 export interface PlaybackSyncState {
   currentTime: number;
@@ -295,9 +295,37 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [videoId, initPlayer]);
 
   const [syncFeedback, setSyncFeedback] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(100);
+  const [isMusicMuted, setIsMusicMuted] = useState(false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
 
   const handleManualSkip = () => {
     onVideoError?.();
+  };
+
+  // 음악 볼륨 조절
+  const handleMusicVolumeChange = (newVolume: number) => {
+    setMusicVolume(newVolume);
+    if (playerRef.current && typeof playerRef.current.setVolume === 'function') {
+      playerRef.current.setVolume(newVolume);
+      if (newVolume > 0 && isMusicMuted) {
+        setIsMusicMuted(false);
+        playerRef.current.unMute?.();
+      }
+    }
+  };
+
+  // 음악 음소거 토글
+  const handleMusicMuteToggle = () => {
+    if (playerRef.current) {
+      if (isMusicMuted) {
+        playerRef.current.unMute?.();
+        playerRef.current.setVolume?.(musicVolume);
+      } else {
+        playerRef.current.mute?.();
+      }
+      setIsMusicMuted(!isMusicMuted);
+    }
   };
 
   // 수동으로 현재 위치 동기화 (다른 사람들을 내 위치로)
@@ -359,15 +387,51 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Skip button overlay */}
-      <button
-        onClick={handleManualSkip}
-        className="absolute bottom-4 right-4 bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm z-10"
-        title="재생 안되면 클릭해서 스킵"
-      >
-        <SkipForward size={16} />
-        스킵
-      </button>
+      {/* Bottom controls */}
+      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-10">
+        {/* Music Volume Control */}
+        <div 
+          className="relative flex items-center gap-2"
+          onMouseEnter={() => setShowVolumeSlider(true)}
+          onMouseLeave={() => setShowVolumeSlider(false)}
+        >
+          <button
+            onClick={handleMusicMuteToggle}
+            className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
+            title={isMusicMuted ? '음악 소리 켜기' : '음악 소리 끄기'}
+          >
+            <Music size={14} className="text-purple-400" />
+            {isMusicMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+          
+          {/* Volume Slider */}
+          {showVolumeSlider && (
+            <div className="absolute left-full ml-2 bg-black/90 rounded-lg px-3 py-2 flex items-center gap-2 min-w-[140px]">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={isMusicMuted ? 0 : musicVolume}
+                onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
+                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <span className="text-xs text-white min-w-[32px]">
+                {isMusicMuted ? '0' : musicVolume}%
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Skip button */}
+        <button
+          onClick={handleManualSkip}
+          className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+          title="재생 안되면 클릭해서 스킵"
+        >
+          <SkipForward size={16} />
+          스킵
+        </button>
+      </div>
     </div>
   );
 };

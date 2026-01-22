@@ -26,6 +26,8 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
     const [isConnecting, setIsConnecting] = useState(false);
     const [remoteUsers, setRemoteUsers] = useState<RemoteUser[]>([]);
     const [audioStatus, setAudioStatus] = useState<string>('');
+    const [voiceVolume, setVoiceVolume] = useState(100);
+    const [showVoiceVolumeSlider, setShowVoiceVolumeSlider] = useState(false);
 
     const voiceChatRef = useRef<VoiceChatService | null>(null);
     const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -76,29 +78,52 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
     }, [onError]);
 
     // Handle connection state change
-    const handleConnectionStateChange = useCallback((userId: string, state: string) => {
-        console.log('[VoiceChat UI] Connection state:', userId, state);
-        setAudioStatus(state);
+    const handleConnectionStateChange = useCallback((odedUserId: string, state: string) => {
+        console.log('[VoiceChat UI] Connection state:', odedUserId, state);
+    }, []);
+
+    // Handle status change
+    const handleStatusChange = useCallback((status: string) => {
+        console.log('[VoiceChat UI] Status:', status);
+        setAudioStatus(status);
+    }, []);
+
+    // Handle join complete
+    const handleJoinComplete = useCallback(() => {
+        console.log('[VoiceChat UI] Join complete');
+        setIsJoined(true);
+        setIsConnecting(false);
     }, []);
 
     // Join voice chat
     const handleJoin = async () => {
         setIsConnecting(true);
-        setAudioStatus('Connecting...');
+        setAudioStatus('🎤 연결 중...');
+        
+        // 타임아웃 설정 (15초)
+        const timeout = setTimeout(() => {
+            if (isConnecting && !isJoined) {
+                setAudioStatus('⚠️ 연결 시간 초과');
+                setIsConnecting(false);
+                handleError(new Error('연결 시간이 초과되었습니다. 다시 시도해주세요.'));
+            }
+        }, 15000);
+        
         try {
             voiceChatRef.current = new VoiceChatService(roomId, userId, {
                 onRemoteStream: handleRemoteStream,
                 onUserLeft: handleUserLeft,
                 onError: handleError,
                 onConnectionStateChange: handleConnectionStateChange,
+                onJoinComplete: handleJoinComplete,
+                onStatusChange: handleStatusChange,
             });
 
             await voiceChatRef.current.join();
-            setIsJoined(true);
-            setAudioStatus('Connected - waiting for others');
+            clearTimeout(timeout);
         } catch (error) {
+            clearTimeout(timeout);
             handleError(error as Error);
-        } finally {
             setIsConnecting(false);
         }
     };
@@ -143,6 +168,21 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         setAudioStatus(newDeafened ? 'Speaker muted' : 'Speaker unmuted');
     };
 
+    // 음성 볼륨 조절
+    const handleVoiceVolumeChange = (newVolume: number) => {
+        setVoiceVolume(newVolume);
+        const volumeDecimal = newVolume / 100;
+        audioRefs.current.forEach(audio => {
+            audio.volume = volumeDecimal;
+        });
+        if (newVolume > 0 && isDeafened) {
+            setIsDeafened(false);
+            audioRefs.current.forEach(audio => {
+                audio.muted = false;
+            });
+        }
+    };
+
     // Play remote audio streams
     useEffect(() => {
         remoteUsers.forEach(user => {
@@ -154,7 +194,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 audio.id = `voice-audio-${user.odedUserId}`;
                 audio.autoplay = true;
                 audio.playsInline = true;
-                audio.volume = 1.0;
+                audio.volume = voiceVolume / 100;
                 audio.style.display = 'none';
                 
                 // 크로스 브라우저 호환성
@@ -203,7 +243,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 tryPlay();
             }
         });
-    }, [remoteUsers, isDeafened]);
+    }, [remoteUsers, isDeafened, voiceVolume]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -224,50 +264,55 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
 
     if (!isJoined) {
         return (
-            <button
-                onClick={handleJoin}
-                disabled={isConnecting}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white rounded-full text-sm font-medium transition-all shadow-lg"
-            >
-                {isConnecting ? (
-                    <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        연결 중...
-                    </>
-                ) : (
-                    <>
-                        <PhoneCall size={16} />
-                        음성 참가
-                    </>
-                )}
-            </button>
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={handleJoin}
+                    disabled={isConnecting}
+                    className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-green-600 hover:bg-green-500 disabled:bg-yellow-600 text-white rounded-full text-xs sm:text-sm font-medium transition-all shadow-lg"
+                >
+                    {isConnecting ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span className="hidden sm:inline text-xs">{audioStatus || '연결 중...'}</span>
+                        </>
+                    ) : (
+                        <>
+                            <PhoneCall size={16} />
+                            <span className="hidden sm:inline">음성 참가</span>
+                        </>
+                    )}
+                </button>
+            </div>
         );
     }
 
     return (
-        <div className="flex items-center gap-2 bg-gray-800/80 rounded-full px-3 py-1.5 border border-gray-700">
-            {/* Status indicator */}
-            <div className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
-                <span className="text-xs text-gray-400">
+        <div className="flex items-center gap-1 sm:gap-2 bg-gray-800/80 rounded-full px-2 sm:px-3 py-1 sm:py-1.5 border border-gray-700">
+            {/* Status indicator - hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-green-500'}`} />
+                <span className="text-xs text-gray-400" title={audioStatus}>
                     {remoteUsers.length > 0 ? (
                         <span className="flex items-center gap-1">
                             <Users size={12} />
-                            {remoteUsers.length + 1}명 연결됨
+                            {remoteUsers.length + 1}명
                         </span>
                     ) : (
-                        <span title={audioStatus}>대기 중...</span>
+                        <span>준비됨</span>
                     )}
                 </span>
             </div>
 
+            {/* Mobile: Just show green dot */}
+            <span className={`sm:hidden w-2 h-2 rounded-full bg-green-500 ${remoteUsers.length > 0 ? 'animate-pulse' : ''}`} />
+
             {/* Divider */}
-            <div className="w-px h-5 bg-gray-600" />
+            <div className="w-px h-4 sm:h-5 bg-gray-600" />
 
             {/* Mute button */}
             <button
                 onClick={handleToggleMute}
-                className={`p-1.5 rounded-full transition-colors ${isMuted
+                className={`p-1 sm:p-1.5 rounded-full transition-colors ${isMuted
                     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                     : 'hover:bg-gray-700 text-gray-300'
                     }`}
@@ -276,25 +321,50 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
             </button>
 
-            {/* Deafen button */}
-            <button
-                onClick={handleToggleDeafen}
-                className={`p-1.5 rounded-full transition-colors ${isDeafened
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'hover:bg-gray-700 text-gray-300'
-                    }`}
-                title={isDeafened ? '스피커 켜기' : '스피커 끄기'}
+            {/* Voice Volume Control */}
+            <div 
+                className="relative flex items-center"
+                onMouseEnter={() => setShowVoiceVolumeSlider(true)}
+                onMouseLeave={() => setShowVoiceVolumeSlider(false)}
             >
-                {isDeafened ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
+                <button
+                    onClick={handleToggleDeafen}
+                    className={`p-1 sm:p-1.5 rounded-full transition-colors ${isDeafened
+                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                        : 'hover:bg-gray-700 text-gray-300'
+                        }`}
+                    title={isDeafened ? '스피커 켜기' : '스피커 끄기'}
+                >
+                    {isDeafened ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                </button>
+                
+                {/* Voice Volume Slider */}
+                {showVoiceVolumeSlider && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg px-3 py-2 flex flex-col items-center gap-2 border border-gray-700 shadow-xl z-50">
+                        <span className="text-xs text-green-400 whitespace-nowrap">🎤 음성</span>
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={isDeafened ? 0 : voiceVolume}
+                            onChange={(e) => handleVoiceVolumeChange(Number(e.target.value))}
+                            className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
+                            style={{ writingMode: 'horizontal-tb' }}
+                        />
+                        <span className="text-xs text-white">
+                            {isDeafened ? '0' : voiceVolume}%
+                        </span>
+                    </div>
+                )}
+            </div>
 
             {/* Divider */}
-            <div className="w-px h-5 bg-gray-600" />
+            <div className="w-px h-4 sm:h-5 bg-gray-600" />
 
             {/* Leave button */}
             <button
                 onClick={handleLeave}
-                className="p-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                className="p-1 sm:p-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
                 title="음성 나가기"
             >
                 <PhoneOff size={16} />

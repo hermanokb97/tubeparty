@@ -1121,37 +1121,38 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* Playlist Browser Button */}
           <button
             onClick={() => setShowPlaylistBrowser(true)}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full text-sm transition-colors"
+            className="flex items-center gap-1 sm:gap-2 bg-purple-600 hover:bg-purple-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
             title="재생목록 탐색"
           >
-            <ListMusic size={14} />
+            <ListMusic size={16} />
             <span className="hidden sm:inline">재생목록</span>
           </button>
 
           {/* Sync Toggle Button */}
           <button
             onClick={handleToggleSync}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border ${
               isSyncEnabled
                 ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
                 : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
             }`}
             title={isSyncEnabled ? '동기화 끄기' : '동기화 켜기'}
           >
-            {isSyncEnabled ? <Users size={14} /> : <UserX size={14} />}
+            {isSyncEnabled ? <Users size={16} /> : <UserX size={16} />}
             <span className="hidden sm:inline">{isSyncEnabled ? '동기화' : '개별재생'}</span>
           </button>
 
           {/* Invite Button */}
           <button
             onClick={handleShare}
-            className="flex items-center gap-2 bg-brand-gray hover:bg-gray-700 text-white px-3 py-1.5 rounded-full text-sm transition-colors border border-gray-600"
+            className="flex items-center gap-1 sm:gap-2 bg-brand-gray hover:bg-gray-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-gray-600"
+            title="초대"
           >
-            <Share2 size={14} />
+            <Share2 size={16} />
             <span className="hidden sm:inline">초대</span>
           </button>
 
@@ -1190,31 +1191,19 @@ const App: React.FC = () => {
               setPlaylist([]);
               setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
             }}
-            className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1.5 rounded-full text-sm transition-colors border border-red-600/30"
+            className="flex items-center gap-1 sm:gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-red-600/30"
             title="방 나가기"
           >
             <LogOut size={14} />
             <span className="hidden sm:inline">나가기</span>
           </button>
-          <div className="flex -space-x-2">
-            {users.slice(0, 5).map((u, i) => (
-              <div key={u.id} className={`w-8 h-8 rounded-full border-2 border-brand-dark flex items-center justify-center text-xs text-white font-bold
-                  ${u.isAi ? 'bg-gradient-to-tr from-purple-600 to-blue-600' : 'bg-gray-600'}`}
-                style={{ zIndex: 10 - i }}
-                title={u.name}
-              >
-                {u.name[0]}
-              </div>
-            ))}
-            {users.length > 5 && (
-              <div className="w-8 h-8 rounded-full border-2 border-brand-dark bg-gray-800 flex items-center justify-center text-xs text-gray-400 font-bold z-0">
-                +{users.length - 5}
-              </div>
-            )}
-          </div>
 
-          <button className="md:hidden text-white ml-2" onClick={() => setActiveTab(activeTab === TabType.CHAT ? TabType.PLAYLIST : TabType.CHAT)}>
-            {activeTab === TabType.CHAT ? <ListVideo /> : <MessageSquare />}
+          {/* Mobile Tab Toggle */}
+          <button 
+            className="md:hidden text-white p-2 bg-gray-700 rounded-lg" 
+            onClick={() => setActiveTab(activeTab === TabType.CHAT ? TabType.PLAYLIST : TabType.CHAT)}
+          >
+            {activeTab === TabType.CHAT ? <ListVideo size={18} /> : <MessageSquare size={18} />}
           </button>
         </div>
       </nav>

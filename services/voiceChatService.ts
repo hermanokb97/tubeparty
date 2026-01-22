@@ -47,6 +47,8 @@ interface VoiceChatCallbacks {
     onUserLeft: (userId: string) => void;
     onError: (error: Error) => void;
     onConnectionStateChange?: (userId: string, state: string) => void;
+    onJoinComplete?: () => void; // 방 참가 완료 (마이크 준비됨)
+    onStatusChange?: (status: string) => void; // 전체 상태 변경
 }
 
 export class VoiceChatService {
@@ -83,10 +85,13 @@ export class VoiceChatService {
     }
 
     async join(): Promise<void> {
+        this.callbacks.onStatusChange?.('🎤 마이크 연결 중...');
+        
         if (!this.localStream) {
             await this.initialize();
         }
 
+        this.callbacks.onStatusChange?.('🔗 서버 연결 중...');
         console.log('[VoiceChat] Joining room:', this.roomId);
 
         // Clean up any stale signaling data from previous sessions
@@ -110,6 +115,10 @@ export class VoiceChatService {
         this.listenForOffers();
         this.listenForAnswers();
         this.listenForIceCandidates();
+        
+        // 참가 완료 알림
+        this.callbacks.onStatusChange?.('✅ 연결됨 - 다른 참가자 대기 중');
+        this.callbacks.onJoinComplete?.();
     }
 
     async leave(): Promise<void> {
@@ -182,11 +191,17 @@ export class VoiceChatService {
             console.log('[VoiceChat] ICE state:', pc.iceConnectionState);
             this.callbacks.onConnectionStateChange?.(remoteUserId, `ICE: ${pc.iceConnectionState}`);
             
-            if (pc.iceConnectionState === 'failed') {
-                console.log('[VoiceChat] ICE failed, restarting...');
-                pc.restartIce();
+            if (pc.iceConnectionState === 'checking') {
+                this.callbacks.onStatusChange?.('🔄 연결 확인 중...');
             } else if (pc.iceConnectionState === 'connected') {
                 console.log('[VoiceChat] ICE connected successfully!');
+                this.callbacks.onStatusChange?.('🔊 음성 연결됨');
+            } else if (pc.iceConnectionState === 'failed') {
+                console.log('[VoiceChat] ICE failed, restarting...');
+                this.callbacks.onStatusChange?.('⚠️ 연결 재시도 중...');
+                pc.restartIce();
+            } else if (pc.iceConnectionState === 'disconnected') {
+                this.callbacks.onStatusChange?.('⏳ 연결 끊김, 재연결 중...');
             }
         };
 
@@ -194,8 +209,11 @@ export class VoiceChatService {
             console.log('[VoiceChat] Connection state:', pc.connectionState);
             this.callbacks.onConnectionStateChange?.(remoteUserId, `연결: ${pc.connectionState}`);
             
-            if (pc.connectionState === 'connected') {
+            if (pc.connectionState === 'connecting') {
+                this.callbacks.onStatusChange?.('🔄 피어 연결 중...');
+            } else if (pc.connectionState === 'connected') {
                 console.log('[VoiceChat] Peer connected successfully!');
+                this.callbacks.onStatusChange?.('🔊 음성 연결됨');
             } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 this.handleUserDisconnected(remoteUserId);
             }
