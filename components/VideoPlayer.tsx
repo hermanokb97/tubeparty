@@ -358,83 +358,117 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
+  // 10단계 볼륨 프리셋
+  const volumePresets = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
   return (
     <div className="relative w-full h-0 pb-[56.25%] bg-black rounded-lg overflow-hidden shadow-2xl border border-brand-gray">
+      {/* YouTube Player Container - z-index 1 */}
       <div
         ref={containerRef}
-        className="absolute top-0 left-0 w-full h-full"
+        className="absolute top-0 left-0 w-full h-full z-[1]"
       />
 
-      {/* Sync indicator & Manual sync button */}
-      {syncEnabled && (
-        <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
-          <div className="bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs">
-            <Users size={12} />
-            <span>동기화 중</span>
-          </div>
-          <button
-            onClick={handleManualSync}
-            className={`px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all ${
-              syncFeedback 
-                ? 'bg-green-500 text-white' 
-                : 'bg-black/70 text-yellow-400 hover:bg-yellow-500 hover:text-black'
-            }`}
-            title="현재 재생 위치를 다른 사람들에게 공유"
-          >
-            <Radio size={12} className={syncFeedback ? 'animate-pulse' : ''} />
-            <span>{syncFeedback ? '전송됨!' : '지금 위치 공유'}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Bottom controls */}
-      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-10">
-        {/* Music Volume Control */}
-        <div className="relative flex items-center gap-2">
-          <button
-            onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-            className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
-            title="음악 볼륨 조절"
-          >
-            <Music size={14} className="text-purple-400" />
-            {isMusicMuted || musicVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </button>
-          
-          {/* Volume Slider - 클릭으로 토글 */}
-          {showVolumeSlider && (
-            <div className="absolute bottom-full left-0 mb-2 bg-black/90 rounded-lg p-3 flex flex-col items-center gap-2 min-w-[60px] shadow-xl border border-gray-700">
-              <span className="text-xs text-purple-400">🎵 음악</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={isMusicMuted ? 0 : musicVolume}
-                onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
-                className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                style={{ writingMode: 'horizontal-tb' }}
-              />
-              <span className="text-xs text-white">
-                {isMusicMuted ? '0' : musicVolume}%
-              </span>
-              <button
-                onClick={handleMusicMuteToggle}
-                className={`text-xs px-2 py-1 rounded ${isMusicMuted ? 'bg-red-500/30 text-red-400' : 'bg-gray-700 text-gray-300'}`}
-              >
-                {isMusicMuted ? '음소거 해제' : '음소거'}
-              </button>
+      {/* Overlay Container - pointer-events: none로 클릭 통과 */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-10">
+        {/* Sync indicator & Manual sync button */}
+        {syncEnabled && (
+          <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-auto">
+            <div className="bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs">
+              <Users size={12} />
+              <span>동기화 중</span>
             </div>
-          )}
-        </div>
+            <button
+              onClick={handleManualSync}
+              className={`px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all ${
+                syncFeedback 
+                  ? 'bg-green-500 text-white' 
+                  : 'bg-black/70 text-yellow-400 hover:bg-yellow-500 hover:text-black'
+              }`}
+              title="현재 재생 위치를 다른 사람들에게 공유"
+            >
+              <Radio size={12} className={syncFeedback ? 'animate-pulse' : ''} />
+              <span>{syncFeedback ? '전송됨!' : '지금 위치 공유'}</span>
+            </button>
+          </div>
+        )}
 
-        {/* Skip button */}
-        <button
-          onClick={handleManualSkip}
-          className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-          title="재생 안되면 클릭해서 스킵"
-        >
-          <SkipForward size={16} />
-          스킵
-        </button>
+        {/* Bottom controls */}
+        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-auto">
+          {/* Music Volume Control */}
+          <div className="relative flex items-center gap-2">
+            <button
+              onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+              className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
+              title="음악 볼륨 조절"
+            >
+              <Music size={14} className="text-purple-400" />
+              {isMusicMuted || musicVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              <span className="text-xs ml-1">{isMusicMuted ? 0 : musicVolume}</span>
+            </button>
+            
+            {/* Volume Slider with 10-step buttons */}
+            {showVolumeSlider && (
+              <div className="absolute bottom-full left-0 mb-2 bg-black/95 rounded-lg p-3 flex flex-col items-center gap-3 shadow-xl border border-gray-700 z-50">
+                <span className="text-sm font-medium text-purple-400">🎵 음악 볼륨</span>
+                
+                {/* Slider */}
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="10"
+                  value={isMusicMuted ? 0 : musicVolume}
+                  onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
+                  className="w-40 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+                
+                {/* 10-step preset buttons */}
+                <div className="flex flex-wrap gap-1 justify-center max-w-[180px]">
+                  {volumePresets.map((vol) => (
+                    <button
+                      key={vol}
+                      onClick={() => handleMusicVolumeChange(vol)}
+                      className={`w-8 h-7 text-xs rounded transition-all ${
+                        musicVolume === vol && !isMusicMuted
+                          ? 'bg-purple-500 text-white font-bold'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {vol}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 w-full">
+                  <span className="text-lg font-bold text-white flex-1 text-center">
+                    {isMusicMuted ? '🔇 0' : `🔊 ${musicVolume}`}%
+                  </span>
+                  <button
+                    onClick={handleMusicMuteToggle}
+                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      isMusicMuted 
+                        ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {isMusicMuted ? '음소거 해제' : '음소거'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Skip button */}
+          <button
+            onClick={handleManualSkip}
+            className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+            title="재생 안되면 클릭해서 스킵"
+          >
+            <SkipForward size={16} />
+            스킵
+          </button>
+        </div>
       </div>
     </div>
   );

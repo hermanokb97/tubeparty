@@ -1,5 +1,51 @@
-import React, { useState } from 'react';
-import { MonitorPlay, ArrowRight, Plus, Users, Key, Hash } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MonitorPlay, ArrowRight, Plus, Users, Key, Hash, Save, Trash2, Clock } from 'lucide-react';
+
+// 저장된 로그인 정보 타입
+interface SavedCredentials {
+  nickname: string;
+  apiKey: string;
+  savedAt: number;
+}
+
+// localStorage 키
+const STORAGE_KEY = 'tubePartyCredentials';
+
+// 저장된 정보 불러오기
+const loadSavedCredentials = (): SavedCredentials | null => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load saved credentials:', e);
+  }
+  return null;
+};
+
+// 정보 저장
+const saveCredentials = (nickname: string, apiKey: string) => {
+  try {
+    const data: SavedCredentials = {
+      nickname,
+      apiKey,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Failed to save credentials:', e);
+  }
+};
+
+// 저장된 정보 삭제
+const clearSavedCredentials = () => {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.error('Failed to clear credentials:', e);
+  }
+};
 
 interface OnboardingProps {
   onCreateRoom: (nickname: string, apiKey: string) => void;
@@ -12,10 +58,27 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
   const [apiKey, setApiKey] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [error, setError] = useState('');
+  const [saveInfo, setSaveInfo] = useState(true);
+  const [hasSavedData, setHasSavedData] = useState(false);
+
+  // 저장된 정보 불러오기
+  useEffect(() => {
+    const saved = loadSavedCredentials();
+    if (saved) {
+      setNickname(saved.nickname);
+      setApiKey(saved.apiKey);
+      setHasSavedData(true);
+      setSaveInfo(true);
+    }
+  }, []);
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (nickname.trim() && apiKey.trim()) {
+      // 정보 저장 옵션이 켜져있으면 저장
+      if (saveInfo) {
+        saveCredentials(nickname.trim(), apiKey.trim());
+      }
       onCreateRoom(nickname.trim(), apiKey.trim());
     }
   };
@@ -23,8 +86,21 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (nickname.trim() && roomCode.trim()) {
+      // 닉네임만 저장 (방 참가시에는 API 키가 없을 수 있음)
+      if (saveInfo && nickname.trim()) {
+        const saved = loadSavedCredentials();
+        saveCredentials(nickname.trim(), saved?.apiKey || '');
+      }
       onJoinRoom(nickname.trim(), roomCode.trim().toUpperCase());
     }
+  };
+
+  const handleClearSaved = () => {
+    clearSavedCredentials();
+    setNickname('');
+    setApiKey('');
+    setHasSavedData(false);
+    setSaveInfo(true);
   };
 
   return (
@@ -44,6 +120,36 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
         {mode === 'select' && (
           <div className="space-y-4">
+            {/* 저장된 정보가 있으면 표시 */}
+            {hasSavedData && nickname && (
+              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700 mb-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-green-400 text-sm">
+                    <Clock size={14} />
+                    <span>저장된 정보</span>
+                  </div>
+                  <button
+                    onClick={handleClearSaved}
+                    className="text-gray-500 hover:text-red-400 transition-colors p-1"
+                    title="저장된 정보 삭제"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-brand-red/20 rounded-full flex items-center justify-center text-brand-red font-bold">
+                    {nickname.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-white font-medium">{nickname}</p>
+                    <p className="text-gray-500 text-xs">
+                      {apiKey ? '🔑 API 키 저장됨' : '닉네임만 저장됨'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={() => setMode('create')}
               className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-red/20"
@@ -98,6 +204,24 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               </p>
             </div>
 
+            {/* 정보 저장 옵션 */}
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={saveInfo}
+                  onChange={(e) => setSaveInfo(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                  {saveInfo && <Save size={12} className="text-white" />}
+                </div>
+              </div>
+              <span className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
+                다음에도 빠르게 로그인하기 (정보 저장)
+              </span>
+            </label>
+
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
             <button
@@ -151,6 +275,24 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
               />
             </div>
+
+            {/* 정보 저장 옵션 */}
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={saveInfo}
+                  onChange={(e) => setSaveInfo(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                  {saveInfo && <Save size={12} className="text-white" />}
+                </div>
+              </div>
+              <span className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
+                닉네임 저장하기
+              </span>
+            </label>
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
 

@@ -78,6 +78,12 @@ const App: React.FC = () => {
   // 이전 사용자 목록 (입장/퇴장 감지용)
   const prevUsersRef = useRef<Set<string>>(new Set());
 
+  // currentRoom을 ref로 추적하여 stale closure 방지
+  const currentRoomRef = useRef(currentRoom);
+  useEffect(() => {
+    currentRoomRef.current = currentRoom;
+  }, [currentRoom]);
+
   // --- Session Restore on Page Load ---
   useEffect(() => {
     const restoreSession = async () => {
@@ -177,17 +183,32 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [hasJoined, users]);
 
+  // currentVideo를 ref로 추적하여 stale closure 방지
+  const currentVideoRef = useRef(currentVideo);
+  useEffect(() => {
+    currentVideoRef.current = currentVideo;
+  }, [currentVideo]);
+
   // --- Firebase Real-time Sync ---
   useEffect(() => {
     if (!hasJoined || !currentRoom) return;
 
     // Subscribe to room updates from Firebase
     const unsubscribe = firebaseService.subscribeToRoom(currentRoom.id, (data) => {
-      if (data.currentVideo && data.currentVideo.id !== currentVideo.id) {
+      // ref를 사용하여 항상 최신 currentVideo와 비교
+      if (data.currentVideo && data.currentVideo.id !== currentVideoRef.current.id) {
         setCurrentVideo(data.currentVideo);
       }
       if (data.playlist && data.playlist.length > 0) {
-        setPlaylist(data.playlist);
+        // 함수형 업데이트로 playlist 비교
+        setPlaylist(prev => {
+          // 내용이 같으면 업데이트하지 않음
+          if (prev.length === data.playlist.length && 
+              prev.every((v, i) => v.id === data.playlist[i]?.id)) {
+            return prev;
+          }
+          return data.playlist;
+        });
       }
     });
 
@@ -555,7 +576,9 @@ const App: React.FC = () => {
     }
   };
 
-  const handleVideoChange = (video: Video) => {
+  const handleVideoChange = useCallback((video: Video) => {
+    // currentVideoRef 업데이트 (Firebase sync에서 중복 방지용)
+    currentVideoRef.current = video;
     setCurrentVideo(video);
 
     // Calculate new playlist first to avoid side effects in setter
@@ -566,21 +589,18 @@ const App: React.FC = () => {
       return updatedPlaylist;
     });
 
-    // Sync to Firebase (after state update)
-    // We use setTimeout to ensure we have the calculated playlist and avoid blocking render
+    // Sync to Firebase (after state update) - ref를 사용하여 최신 room 참조
     setTimeout(() => {
-      if (currentRoom && updatedPlaylist.length > 0) {
-        firebaseService.updateCurrentVideo(currentRoom.id, video);
-        // Only update playlist if it changed (optimization)
-        if (updatedPlaylist.length > playlist.length) {
-          firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
-        }
+      const room = currentRoomRef.current;
+      if (room && updatedPlaylist.length > 0) {
+        firebaseService.updateCurrentVideo(room.id, video);
+        firebaseService.updatePlaylist(room.id, updatedPlaylist);
       }
     }, 0);
 
     // Broadcast local
     syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video } });
-  };
+  }, []);
 
   const handleGenerateRecommendations = async () => {
     setIsGenerating(true);
@@ -696,15 +716,17 @@ const App: React.FC = () => {
   const handleVideoEnd = useCallback(() => {
     console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn);
     if (repeatMode === 'one') {
-      setCurrentVideo({ ...currentVideo });
+      // 현재 비디오 ref를 사용하여 최신 값 참조
+      setCurrentVideo(prev => ({ ...prev }));
       return;
     }
 
-    const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
+    const currentVid = currentVideoRef.current;
+    const currentIndex = playlist.findIndex(v => v.id === currentVid.id);
     console.log('Current Index:', currentIndex, 'Playlist Length:', playlist.length);
 
     if (isShuffleOn) {
-      const otherVideos = playlist.filter(v => v.id !== currentVideo.id);
+      const otherVideos = playlist.filter(v => v.id !== currentVid.id);
       if (otherVideos.length > 0) {
         const randomVideo = otherVideos[Math.floor(Math.random() * otherVideos.length)];
         handleVideoChange(randomVideo);
@@ -721,7 +743,7 @@ const App: React.FC = () => {
         console.log('End of playlist');
       }
     }
-  }, [currentVideo, playlist, isShuffleOn, repeatMode]);
+  }, [playlist, isShuffleOn, repeatMode, handleVideoChange]);
 
   // Load saved playlists on mount
   useEffect(() => {

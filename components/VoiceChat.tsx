@@ -309,37 +309,64 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             <div className="relative flex items-center">
                 <button
                     onClick={() => setShowVoiceVolumeSlider(!showVoiceVolumeSlider)}
-                    className={`p-1 sm:p-1.5 rounded-full transition-colors ${isDeafened || voiceVolume === 0
+                    className={`p-1 sm:p-1.5 rounded-full transition-colors flex items-center gap-1 ${isDeafened || voiceVolume === 0
                         ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                         : 'hover:bg-gray-700 text-gray-300'
                         }`}
                     title="음성 볼륨 조절"
                 >
                     {isDeafened || voiceVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                    <span className="text-xs hidden sm:inline">{isDeafened ? 0 : voiceVolume}</span>
                 </button>
                 
-                {/* Voice Volume Slider - 클릭으로 토글 */}
+                {/* Voice Volume Slider with 10-step buttons */}
                 {showVoiceVolumeSlider && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg p-3 flex flex-col items-center gap-2 border border-gray-700 shadow-xl z-50 min-w-[80px]">
-                        <span className="text-xs text-green-400 whitespace-nowrap">🎤 음성</span>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg p-3 flex flex-col items-center gap-3 border border-gray-700 shadow-xl z-50">
+                        <span className="text-sm font-medium text-green-400 whitespace-nowrap">🎤 음성 볼륨</span>
+                        
+                        {/* Slider */}
                         <input
                             type="range"
                             min="0"
                             max="100"
+                            step="10"
                             value={isDeafened ? 0 : voiceVolume}
                             onChange={(e) => handleVoiceVolumeChange(Number(e.target.value))}
-                            className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
-                            style={{ writingMode: 'horizontal-tb' }}
+                            className="w-40 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
                         />
-                        <span className="text-xs text-white">
-                            {isDeafened ? '0' : voiceVolume}%
-                        </span>
-                        <button
-                            onClick={handleToggleDeafen}
-                            className={`text-xs px-2 py-1 rounded ${isDeafened ? 'bg-red-500/30 text-red-400' : 'bg-gray-700 text-gray-300'}`}
-                        >
-                            {isDeafened ? '음소거 해제' : '음소거'}
-                        </button>
+                        
+                        {/* 10-step preset buttons */}
+                        <div className="flex flex-wrap gap-1 justify-center max-w-[180px]">
+                            {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((vol) => (
+                                <button
+                                    key={vol}
+                                    onClick={() => handleVoiceVolumeChange(vol)}
+                                    className={`w-8 h-7 text-xs rounded transition-all ${
+                                        voiceVolume === vol && !isDeafened
+                                            ? 'bg-green-500 text-white font-bold'
+                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    }`}
+                                >
+                                    {vol}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full">
+                            <span className="text-lg font-bold text-white flex-1 text-center">
+                                {isDeafened ? '🔇 0' : `🔊 ${voiceVolume}`}%
+                            </span>
+                            <button
+                                onClick={handleToggleDeafen}
+                                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                                    isDeafened 
+                                        ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50' 
+                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                }`}
+                            >
+                                {isDeafened ? '음소거 해제' : '음소거'}
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
