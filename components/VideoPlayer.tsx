@@ -393,10 +393,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         )}
 
-        {/* Bottom controls */}
-        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-auto">
+        {/* Bottom controls - 컨테이너는 pointer-events-none, 개별 버튼만 클릭 가능 */}
+        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
           {/* Music Volume Control */}
-          <div className="relative flex items-center gap-2">
+          <div className="relative flex items-center gap-2 pointer-events-auto">
             <button
               onClick={() => setShowVolumeSlider(!showVolumeSlider)}
               className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
@@ -462,7 +462,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Skip button */}
           <button
             onClick={handleManualSkip}
-            className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+            className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm pointer-events-auto"
             title="재생 안되면 클릭해서 스킵"
           >
             <SkipForward size={16} />
