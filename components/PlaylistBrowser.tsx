@@ -219,7 +219,15 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div 
+            className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4"
+            onClick={(e) => {
+                // 바깥쪽 클릭 시 닫기
+                if (e.target === e.currentTarget) {
+                    onClose();
+                }
+            }}
+        >
             <div className="bg-gradient-to-b from-gray-900 to-brand-dark rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-700/50 shadow-2xl overflow-hidden">
                 {/* Header */}
                 <div className="p-5 border-b border-gray-700/50 flex items-center justify-between bg-gradient-to-r from-purple-900/30 to-brand-red/20">
@@ -325,7 +333,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                     </button>
                                     {onSelectVideos && genreVideos.length > 0 && (
                                         <button
-                                            onClick={handleSelectAllGenreVideos}
+                                            onClick={() => handleSelectAllGenreVideos('playNow')}
                                             className={`px-4 py-2 bg-gradient-to-r ${selectedGenre.color} rounded-lg text-sm text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity shadow-lg`}
                                         >
                                             <Plus size={16} />
@@ -361,7 +369,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                     </div>
                                     {selectedGenreVideos.size > 0 && onSelectVideos && (
                                         <button
-                                            onClick={handleAddSelectedGenreVideos}
+                                            onClick={() => handleAddSelectedGenreVideos('playNow')}
                                             className={`bg-gradient-to-r ${selectedGenre.color} text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg`}
                                         >
                                             <Plus size={16} />
@@ -610,7 +618,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                     </div>
                                     {selectedSongs.size > 0 && onSelectVideos && (
                                         <button
-                                            onClick={handleAddSelectedSongs}
+                                            onClick={() => handleAddSelectedSongs('playNow')}
                                             className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg"
                                         >
                                             <Plus size={16} />

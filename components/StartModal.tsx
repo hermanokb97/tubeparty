@@ -79,7 +79,15 @@ export const StartModal: React.FC<StartModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div 
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={(e) => {
+                // 바깥쪽 클릭 시 닫기 (로딩 중이 아닐 때만)
+                if (e.target === e.currentTarget && !isLoading) {
+                    onClose();
+                }
+            }}
+        >
             <div className="bg-gray-900 rounded-2xl border border-gray-700 w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
                 {/* Header */}
                 <div className="p-5 border-b border-gray-700 flex justify-between items-center">

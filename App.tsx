@@ -40,7 +40,7 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [playlist, setPlaylist] = useState<Video[]>([INITIAL_VIDEO]);
   const [currentVideo, setCurrentVideo] = useState<Video>(INITIAL_VIDEO);
-  
+
   // 초기 환영 메시지 설정
   const welcomeMessageSetRef = useRef(false);
   useEffect(() => {
@@ -162,12 +162,12 @@ const App: React.FC = () => {
         case 'JOIN':
           if (!users.some(u => u.id === action.payload.user.id)) {
             setUsers(prev => [...prev, action.payload.user]);
-          setMessages(prev => [...prev, {
-            id: `sys-${Date.now()}`,
-            userId: 'ai-1',
-            text: t('userJoined', { name: action.payload.user.name }),
-            timestamp: Date.now()
-          }]);
+            setMessages(prev => [...prev, {
+              id: `sys-${Date.now()}`,
+              userId: 'ai-1',
+              text: t('userJoined', { name: action.payload.user.name }),
+              timestamp: Date.now()
+            }]);
           }
           break;
         case 'CHAT':
@@ -215,8 +215,8 @@ const App: React.FC = () => {
         // 함수형 업데이트로 playlist 비교
         setPlaylist(prev => {
           // 내용이 같으면 업데이트하지 않음
-          if (prev.length === data.playlist.length && 
-              prev.every((v, i) => v.id === data.playlist[i]?.id)) {
+          if (prev.length === data.playlist.length &&
+            prev.every((v, i) => v.id === data.playlist[i]?.id)) {
             return prev;
           }
           return data.playlist;
@@ -287,7 +287,7 @@ const App: React.FC = () => {
           // 이전 사용자 이름 찾기 (users state에서)
           const leftUser = users.find(u => u.id === prevId);
           const userName = leftUser?.name || '알 수 없는 사용자';
-          
+
           setMessages(prev => [...prev, {
             id: `leave-${prevId}-${Date.now()}`,
             userId: 'ai-1',
@@ -967,12 +967,12 @@ const App: React.FC = () => {
   // Playback Sync Handler
   const handlePlaybackSync = useCallback((state: Omit<PlaybackSyncState, 'syncedAt'>) => {
     if (!currentRoom || !isSyncEnabled) return;
-    
+
     const fullState: firebaseService.PlaybackState = {
       ...state,
       syncedAt: Date.now()
     };
-    
+
     firebaseService.updatePlaybackState(currentRoom.id, fullState);
   }, [currentRoom, isSyncEnabled]);
 
@@ -1024,20 +1024,50 @@ const App: React.FC = () => {
         isOpen={showPlaylistBrowser}
         onClose={() => setShowPlaylistBrowser(false)}
         onSelectPlaylist={handleAddPlaylist}
-        onSelectVideos={(videos) => {
-          // Add videos to playlist
-          setPlaylist(prev => {
-            const newVideos = videos.filter(v => !prev.some(p => p.id === v.id));
-            return [...prev, ...newVideos];
-          });
-          // Play first video
-          if (videos.length > 0) {
-            handleVideoChange(videos[0]);
+        onSelectVideos={(videos, mode) => {
+          if (videos.length === 0) return;
+
+          // Calculate new playlist based on mode
+          const newVideos = videos.filter(v => !playlist.some(p => p.id === v.id));
+          let updatedPlaylist: Video[];
+          let videoToPlay: Video;
+
+          if (mode === 'playNow') {
+            // Play Now: Insert at current position + 1 (right after current video)
+            const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
+            if (currentIndex >= 0) {
+              updatedPlaylist = [
+                ...playlist.slice(0, currentIndex + 1),
+                ...newVideos,
+                ...playlist.slice(currentIndex + 1)
+              ];
+            } else {
+              updatedPlaylist = [...newVideos, ...playlist];
+            }
+            videoToPlay = newVideos[0] || videos[0];
+          } else {
+            // Play Next (default): Add to end of playlist
+            updatedPlaylist = [...playlist, ...newVideos];
+            videoToPlay = videos[0];
           }
+
+          // Update playlist first (synchronously set the state)
+          setPlaylist(updatedPlaylist);
+
+          // Set current video directly without going through handleVideoChange
+          // to avoid handleVideoChange adding the video to the front of playlist
+          currentVideoRef.current = videoToPlay;
+          setCurrentVideo(videoToPlay);
+
           // Sync to Firebase
-          if (currentRoom && videos.length > 0) {
-            firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videos]);
+          if (currentRoom) {
+            firebaseService.updateCurrentVideo(currentRoom.id, videoToPlay);
+            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
           }
+
+          // Broadcast local
+          syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video: videoToPlay } });
+
           // Notify
           setMessages(prev => [...prev, {
             id: `genre-${Date.now()}`,
@@ -1137,6 +1167,16 @@ const App: React.FC = () => {
           {/* Search Results Dropdown */}
           {searchResults.length > 0 && inputMode === 'search' && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
+              {/* 닫기 버튼 */}
+              <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center">
+                <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
+                <button
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"
+                >
+                  <X size={16} />
+                </button>
+              </div>
               {searchResults.map((result) => (
                 <button
                   key={result.id}
@@ -1166,7 +1206,7 @@ const App: React.FC = () => {
               <Globe size={14} />
               <span className="hidden sm:inline">{getCurrentLanguageInfo(language).flag}</span>
             </button>
-            
+
             {showLanguageMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowLanguageMenu(false)} />
@@ -1178,11 +1218,10 @@ const App: React.FC = () => {
                         setLanguage(lang.code);
                         setShowLanguageMenu(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
-                        language === lang.code
-                          ? 'bg-brand-red text-white'
-                          : 'text-gray-300 hover:bg-gray-700'
-                      }`}
+                      className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${language === lang.code
+                        ? 'bg-brand-red text-white'
+                        : 'text-gray-300 hover:bg-gray-700'
+                        }`}
                     >
                       <span>{lang.flag}</span>
                       <span>{lang.label}</span>
@@ -1206,11 +1245,10 @@ const App: React.FC = () => {
           {/* Sync Toggle Button */}
           <button
             onClick={handleToggleSync}
-            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border ${
-              isSyncEnabled
-                ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
-                : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
-            }`}
+            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border ${isSyncEnabled
+              ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
+              : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
+              }`}
             title={isSyncEnabled ? t('sync') : t('individualPlay')}
           >
             {isSyncEnabled ? <Users size={16} /> : <UserX size={16} />}
@@ -1270,8 +1308,8 @@ const App: React.FC = () => {
           </button>
 
           {/* Mobile Tab Toggle */}
-          <button 
-            className="md:hidden text-white p-2 bg-gray-700 rounded-lg" 
+          <button
+            className="md:hidden text-white p-2 bg-gray-700 rounded-lg"
             onClick={() => setActiveTab(activeTab === TabType.CHAT ? TabType.PLAYLIST : TabType.CHAT)}
           >
             {activeTab === TabType.CHAT ? <ListVideo size={18} /> : <MessageSquare size={18} />}
@@ -1342,6 +1380,16 @@ const App: React.FC = () => {
         {/* Mobile Search Results */}
         {searchResults.length > 0 && inputMode === 'search' && (
           <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg max-h-60 overflow-y-auto">
+            {/* 닫기 버튼 */}
+            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center">
+              <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
+              <button
+                onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"
+              >
+                <X size={16} />
+              </button>
+            </div>
             {searchResults.map((result) => (
               <button
                 key={result.id}

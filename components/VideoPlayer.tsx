@@ -87,6 +87,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const lastSyncTimeRef = useRef<number>(0);
   const isSyncingRef = useRef<boolean>(false);
   const lastAppliedSyncRef = useRef<number>(0);
+  
+  // 에러 재시도 관련 refs
+  const errorRetryCountRef = useRef<number>(0);
+  const playerReadyRef = useRef<boolean>(false);
+  const videoStartedRef = useRef<boolean>(false);
 
   // Keep refs updated
   useEffect(() => {
@@ -180,6 +185,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     if (!containerRef.current) return;
 
+    // 새 비디오 로드 시 refs 리셋
+    playerReadyRef.current = false;
+    videoStartedRef.current = false;
+    errorRetryCountRef.current = 0;
+
     // Destroy existing player
     if (playerRef.current) {
       try {
@@ -206,6 +216,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           
           // 재생/일시정지 상태 변경시 동기화 브로드캐스트
           if (event.data === 1) { // Playing
+            videoStartedRef.current = true; // 비디오가 실제로 재생 시작됨
+            errorRetryCountRef.current = 0; // 에러 카운트 리셋
             broadcastSync(true);
           } else if (event.data === 2) { // Paused
             broadcastSync(false);
@@ -218,12 +230,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               try {
                 const duration = player.getDuration();
                 const currentTime = player.getCurrentTime();
-                console.log(`Video state 0 - Duration: ${duration}s, CurrentTime: ${currentTime}s`);
+                console.log(`Video state 0 - Duration: ${duration}s, CurrentTime: ${currentTime}s, videoStarted: ${videoStartedRef.current}`);
                 
-                // 비디오 길이가 있고, 현재 시간이 총 시간의 90% 이상일 때만 끝난 것으로 처리
-                // 또는 비디오가 매우 짧은 경우 (10초 미만)는 바로 처리
-                if (duration > 0 && (currentTime / duration >= 0.9 || (duration < 10 && currentTime >= duration - 1))) {
+                // 비디오가 실제로 재생된 적이 있어야 함
+                if (!videoStartedRef.current) {
+                  console.log('State 0 received but video never started playing, ignoring...');
+                  return;
+                }
+                
+                // 비디오 길이가 유효하고, 현재 시간이 총 시간의 85% 이상일 때만 끝난 것으로 처리
+                // 최소 10초 이상 재생되었어야 함 (매우 짧은 비디오 제외)
+                const minPlayTime = Math.min(10, duration * 0.5);
+                if (duration > 0 && currentTime >= minPlayTime && (currentTime / duration >= 0.85)) {
                   console.log('Video actually ended! Calling onVideoEnd...');
+                  videoStartedRef.current = false;
                   onVideoEndRef.current?.();
                 } else {
                   console.log('State 0 received but video not really ended (possibly ad ended or buffering issue), ignoring...');
@@ -236,11 +256,45 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         },
         onError: (event: any) => {
-          console.error('YouTube Error:', event.data);
-          onVideoErrorRef.current?.();
+          console.error('YouTube Error:', event.data, 'Retry count:', errorRetryCountRef.current);
+          
+          // 에러 코드: 2 = 잘못된 요청, 5 = 재생 불가, 100 = 비디오 없음, 101/150 = 임베드 불가
+          const fatalErrors = [100, 101, 150]; // 재시도해도 안 되는 에러들
+          
+          if (fatalErrors.includes(event.data)) {
+            // 치명적 에러는 바로 스킵
+            console.log('Fatal YouTube error, skipping video');
+            onVideoErrorRef.current?.();
+            return;
+          }
+          
+          // 최대 2번까지 재시도
+          if (errorRetryCountRef.current < 2) {
+            errorRetryCountRef.current++;
+            console.log(`Retrying video playback (attempt ${errorRetryCountRef.current})...`);
+            
+            // 잠시 후 재시도
+            setTimeout(() => {
+              if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+                try {
+                  playerRef.current.loadVideoById(videoId);
+                } catch (e) {
+                  console.error('Retry failed:', e);
+                }
+              }
+            }, 1000);
+          } else {
+            // 재시도 횟수 초과 시 스킵
+            console.log('Max retries exceeded, skipping video');
+            errorRetryCountRef.current = 0;
+            onVideoErrorRef.current?.();
+          }
         },
         onReady: (event: any) => {
           console.log('YouTube Player Ready');
+          playerReadyRef.current = true;
+          videoStartedRef.current = false; // 새 비디오 로드 시 리셋
+          errorRetryCountRef.current = 0;
           
           // 플레이어 준비되면 진행바 클릭(seek) 감지를 위한 폴링 시작
           if (syncEnabled && currentUserId) {
