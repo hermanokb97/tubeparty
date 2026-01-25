@@ -1,85 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MonitorPlay, ArrowRight, Plus, Users, Key, Hash, Save, Trash2, Clock, Globe } from 'lucide-react';
-
-// 언어 타입
-type Language = 'ko' | 'ja' | 'en';
-
-// 번역 데이터
-const translations = {
-  ko: {
-    title: 'TubeParty AI',
-    subtitle: '친구들과 함께 유튜브를 즐기세요.',
-    savedInfo: '저장된 정보',
-    apiKeySaved: '🔑 API 키 저장됨',
-    nicknameOnly: '닉네임만 저장됨',
-    createRoom: '새 방 만들기',
-    joinRoom: '방 참가하기',
-    nickname: '닉네임',
-    nicknamePlaceholder: '멋진 닉네임을 입력하세요',
-    apiKey: 'Gemini API 키',
-    apiKeyPlaceholder: 'AIzaSy...',
-    apiKeyHelp: '에서 무료로 발급받을 수 있어요.',
-    roomCode: '방 코드',
-    roomCodePlaceholder: 'ABCD12',
-    saveLogin: '다음에도 빠르게 로그인하기 (정보 저장)',
-    saveNickname: '닉네임 저장하기',
-    createButton: '방 만들기',
-    joinButton: '입장하기',
-    back: '← 돌아가기',
-    footer: '방을 만들면 친구들과 공유할 수 있는 코드가 생성됩니다.',
-  },
-  ja: {
-    title: 'TubeParty AI',
-    subtitle: '友達と一緒にYouTubeを楽しもう。',
-    savedInfo: '保存された情報',
-    apiKeySaved: '🔑 APIキー保存済み',
-    nicknameOnly: 'ニックネームのみ保存',
-    createRoom: '新しいルームを作成',
-    joinRoom: 'ルームに参加',
-    nickname: 'ニックネーム',
-    nicknamePlaceholder: 'かっこいいニックネームを入力',
-    apiKey: 'Gemini APIキー',
-    apiKeyPlaceholder: 'AIzaSy...',
-    apiKeyHelp: 'で無料で取得できます。',
-    roomCode: 'ルームコード',
-    roomCodePlaceholder: 'ABCD12',
-    saveLogin: '次回も簡単ログイン（情報を保存）',
-    saveNickname: 'ニックネームを保存',
-    createButton: 'ルーム作成',
-    joinButton: '入室する',
-    back: '← 戻る',
-    footer: 'ルームを作成すると、友達と共有できるコードが生成されます。',
-  },
-  en: {
-    title: 'TubeParty AI',
-    subtitle: 'Enjoy YouTube with your friends.',
-    savedInfo: 'Saved Info',
-    apiKeySaved: '🔑 API key saved',
-    nicknameOnly: 'Nickname only',
-    createRoom: 'Create Room',
-    joinRoom: 'Join Room',
-    nickname: 'Nickname',
-    nicknamePlaceholder: 'Enter your nickname',
-    apiKey: 'Gemini API Key',
-    apiKeyPlaceholder: 'AIzaSy...',
-    apiKeyHelp: ' - Get it free from',
-    roomCode: 'Room Code',
-    roomCodePlaceholder: 'ABCD12',
-    saveLogin: 'Remember me for quick login',
-    saveNickname: 'Save nickname',
-    createButton: 'Create Room',
-    joinButton: 'Join',
-    back: '← Back',
-    footer: 'A shareable code will be generated when you create a room.',
-  },
-};
-
-// 언어 정보
-const languageOptions: { code: Language; label: string; flag: string }[] = [
-  { code: 'ko', label: '한국어', flag: '🇰🇷' },
-  { code: 'ja', label: '日本語', flag: '🇯🇵' },
-  { code: 'en', label: 'English', flag: '🇺🇸' },
-];
+import { useI18n, languageOptions } from '../services/i18n';
 
 // 저장된 로그인 정보 타입
 interface SavedCredentials {
@@ -90,7 +11,6 @@ interface SavedCredentials {
 
 // localStorage 키
 const STORAGE_KEY = 'tubePartyCredentials';
-const LANGUAGE_KEY = 'tubePartyLanguage';
 
 // 저장된 정보 불러오기
 const loadSavedCredentials = (): SavedCredentials | null => {
@@ -134,6 +54,8 @@ interface OnboardingProps {
 }
 
 export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom }) => {
+  const { language, setLanguage, t } = useI18n();
+  
   const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
   const [nickname, setNickname] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -141,21 +63,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
   const [error, setError] = useState('');
   const [saveInfo, setSaveInfo] = useState(true);
   const [hasSavedData, setHasSavedData] = useState(false);
-  const [language, setLanguage] = useState<Language>('ko');
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
 
-  // 번역 텍스트
-  const t = translations[language];
-
-  // 저장된 언어 및 정보 불러오기
+  // 저장된 정보 불러오기
   useEffect(() => {
-    // 언어 불러오기
-    const savedLang = localStorage.getItem(LANGUAGE_KEY) as Language;
-    if (savedLang && ['ko', 'ja', 'en'].includes(savedLang)) {
-      setLanguage(savedLang);
-    }
-
-    // 저장된 정보 불러오기
     const saved = loadSavedCredentials();
     if (saved) {
       setNickname(saved.nickname);
@@ -166,9 +77,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
   }, []);
 
   // 언어 변경 핸들러
-  const handleLanguageChange = (lang: Language) => {
+  const handleLanguageChange = (lang: typeof language) => {
     setLanguage(lang);
-    localStorage.setItem(LANGUAGE_KEY, lang);
     setShowLanguageMenu(false);
   };
 
@@ -250,8 +160,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
           <div className="inline-flex items-center justify-center p-4 bg-brand-red/10 rounded-full mb-4 ring-1 ring-brand-red/50">
             <MonitorPlay size={48} className="text-brand-red" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">{t.title}</h1>
-          <p className="text-gray-400">{t.subtitle}</p>
+          <h1 className="text-3xl font-bold text-white mb-2">{t('title')}</h1>
+          <p className="text-gray-400">{t('subtitle')}</p>
         </div>
 
         {mode === 'select' && (
@@ -262,7 +172,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 text-green-400 text-sm">
                     <Clock size={14} />
-                    <span>{t.savedInfo}</span>
+                    <span>{t('savedInfo')}</span>
                   </div>
                   <button
                     onClick={handleClearSaved}
@@ -279,7 +189,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                   <div>
                     <p className="text-white font-medium">{nickname}</p>
                     <p className="text-gray-500 text-xs">
-                      {apiKey ? t.apiKeySaved : t.nicknameOnly}
+                      {apiKey ? t('apiKeySaved') : t('nicknameOnly')}
                     </p>
                   </div>
                 </div>
@@ -291,14 +201,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-red/20"
             >
               <Plus size={20} />
-              {t.createRoom}
+              {t('createRoom')}
             </button>
             <button
               onClick={() => setMode('join')}
               className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3"
             >
               <Users size={20} />
-              {t.joinRoom}
+              {t('joinRoom')}
             </button>
           </div>
         )}
@@ -307,14 +217,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
           <form onSubmit={handleCreateRoom} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t.nickname}
+                {t('nickname')}
               </label>
               <input
                 type="text"
                 required
                 maxLength={12}
                 className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500"
-                placeholder={t.nicknamePlaceholder}
+                placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
               />
@@ -323,20 +233,20 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
                 <Key size={14} />
-                {t.apiKey}
+                {t('apiKey')}
               </label>
               <input
                 type="password"
                 required
                 className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-sm"
-                placeholder={t.apiKeyPlaceholder}
+                placeholder={t('apiKeyPlaceholder')}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
               />
               <p className="text-xs text-gray-500 mt-2">
                 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
                   Google AI Studio
-                </a>{t.apiKeyHelp}
+                </a>{t('apiKeyHelp')}
               </p>
             </div>
 
@@ -354,7 +264,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 </div>
               </div>
               <span className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
-                {t.saveLogin}
+                {t('saveLogin')}
               </span>
             </label>
 
@@ -365,7 +275,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 disabled:opacity-50"
               disabled={!nickname.trim() || !apiKey.trim()}
             >
-              {t.createButton}
+              {t('createButton')}
               <ArrowRight size={20} />
             </button>
 
@@ -374,7 +284,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               onClick={() => setMode('select')}
               className="w-full text-gray-400 hover:text-white py-2 transition-colors text-sm"
             >
-              {t.back}
+              {t('back')}
             </button>
           </form>
         )}
@@ -383,14 +293,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
           <form onSubmit={handleJoinRoom} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                {t.nickname}
+                {t('nickname')}
               </label>
               <input
                 type="text"
                 required
                 maxLength={12}
                 className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500"
-                placeholder={t.nicknamePlaceholder}
+                placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
               />
@@ -399,14 +309,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
                 <Hash size={14} />
-                {t.roomCode}
+                {t('roomCode')}
               </label>
               <input
                 type="text"
                 required
                 maxLength={6}
                 className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-lg tracking-widest uppercase text-center"
-                placeholder={t.roomCodePlaceholder}
+                placeholder={t('roomCodePlaceholder')}
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
               />
@@ -426,7 +336,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 </div>
               </div>
               <span className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
-                {t.saveNickname}
+                {t('saveNickname')}
               </span>
             </label>
 
@@ -437,7 +347,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 disabled:opacity-50"
               disabled={!nickname.trim() || roomCode.length !== 6}
             >
-              {t.joinButton}
+              {t('joinButton')}
               <ArrowRight size={20} />
             </button>
 
@@ -446,13 +356,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               onClick={() => setMode('select')}
               className="w-full text-gray-400 hover:text-white py-2 transition-colors text-sm"
             >
-              {t.back}
+              {t('back')}
             </button>
           </form>
         )}
 
         <div className="mt-8 text-center text-xs text-gray-500">
-          {t.footer}
+          {t('footer')}
         </div>
       </div>
     </div>

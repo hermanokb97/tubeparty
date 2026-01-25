@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Sparkles, Shuffle, Repeat, Repeat1, Save, FolderOpen, X, Trash2, Music, GripVertical } from 'lucide-react';
 import { Video, SavedPlaylist } from '../types';
+import { useI18n } from '../services/i18n';
 import {
   DndContext,
   closestCenter,
@@ -37,6 +38,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
   onSelectVideo,
   onRemoveVideo,
 }) => {
+  const { t } = useI18n();
   const {
     attributes,
     listeners,
@@ -67,7 +69,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
         {...attributes}
         {...listeners}
         className="flex-shrink-0 p-1 text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing touch-none"
-        title="드래그해서 순서 변경"
+        title={t('dragToReorder')}
       >
         <GripVertical size={16} />
       </button>
@@ -118,7 +120,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
           onRemoveVideo?.(video.id);
         }}
         className="flex-shrink-0 p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
-        title="목록에서 삭제"
+        title={t('removeFromList')}
       >
         <Trash2 size={14} />
       </button>
@@ -161,6 +163,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onRemoveVideo,
   onReorderPlaylist
 }) => {
+  const { t } = useI18n();
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
@@ -213,14 +216,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-lg p-4 w-full max-w-xs border border-gray-600">
             <div className="flex justify-between items-center mb-3">
-              <h4 className="text-white font-semibold">플레이리스트 저장</h4>
+              <h4 className="text-white font-semibold">{t('savePlaylist')}</h4>
               <button onClick={() => setShowSaveModal(false)} className="text-gray-400 hover:text-white">
                 <X size={16} />
               </button>
             </div>
             <input
               type="text"
-              placeholder="플레이리스트 이름..."
+              placeholder={t('playlistNamePlaceholder')}
               value={playlistName}
               onChange={(e) => setPlaylistName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
@@ -232,7 +235,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
               disabled={!playlistName.trim()}
               className="w-full bg-brand-red hover:bg-red-600 disabled:bg-gray-600 text-white py-2 rounded text-sm transition-colors"
             >
-              저장하기
+              {t('save')}
             </button>
           </div>
         </div>
@@ -243,14 +246,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-lg p-4 w-full max-w-xs border border-gray-600 max-h-[80%] flex flex-col">
             <div className="flex justify-between items-center mb-3">
-              <h4 className="text-white font-semibold">플레이리스트 불러오기</h4>
+              <h4 className="text-white font-semibold">{t('loadPlaylist')}</h4>
               <button onClick={() => setShowLoadModal(false)} className="text-gray-400 hover:text-white">
                 <X size={16} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto space-y-2">
               {savedPlaylists.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">저장된 플레이리스트가 없습니다.</p>
+                <p className="text-gray-400 text-sm text-center py-4">{t('noSavedPlaylists')}</p>
               ) : (
                 savedPlaylists.map((pl) => (
                   <div
@@ -262,12 +265,12 @@ export const Playlist: React.FC<PlaylistProps> = ({
                       className="flex-1 text-left"
                     >
                       <p className="text-white text-sm font-medium truncate">{pl.name}</p>
-                      <p className="text-gray-400 text-xs">{pl.videos.length}개 영상</p>
+                      <p className="text-gray-400 text-xs">{pl.videos.length}{t('videos')}</p>
                     </button>
                     <button
                       onClick={() => onDeletePlaylist?.(pl.id)}
                       className="p-1 text-gray-400 hover:text-red-400 transition-colors ml-2"
-                      title="삭제"
+                      title={t('delete')}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -287,8 +290,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
               <Play size={14} className="text-brand-red" fill="currentColor" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-sm">재생 목록</h3>
-              <p className="text-xs text-gray-500">{videos.length}곡 {currentIndex >= 0 && `• ${currentIndex + 1}번째 재생 중`}</p>
+              <h3 className="font-bold text-white text-sm">{t('playlistTitle')}</h3>
+              <p className="text-xs text-gray-500">{videos.length} {t('songs')} {currentIndex >= 0 && `• ${currentIndex + 1}${t('nowPlaying')}`}</p>
             </div>
           </div>
         </div>
@@ -299,7 +302,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
               ? 'bg-green-600/30 text-green-400'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
-            title="랜덤 재생"
+            title={t('randomPlay')}
           >
             <Shuffle size={16} />
           </button>
@@ -309,7 +312,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
               ? 'bg-green-600/30 text-green-400'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
-            title={repeatMode === 'off' ? '반복 끔' : repeatMode === 'all' ? '전체 반복' : '한곡 반복'}
+            title={repeatMode === 'off' ? t('repeatOff') : repeatMode === 'all' ? t('repeatAll') : t('repeatOne')}
           >
             <RepeatIcon size={16} />
           </button>
@@ -318,14 +321,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
             onClick={() => setShowSaveModal(true)}
             disabled={videos.length === 0}
             className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-50"
-            title="플레이리스트 저장"
+            title={t('savePlaylist')}
           >
             <Save size={16} />
           </button>
           <button
             onClick={() => setShowLoadModal(true)}
             className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-white/10"
-            title="플레이리스트 불러오기"
+            title={t('loadPlaylist')}
           >
             <FolderOpen size={16} />
           </button>
@@ -340,7 +343,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
           className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600/30 to-pink-600/30 hover:from-purple-600/50 hover:to-pink-600/50 text-purple-300 px-3 py-2 rounded-lg transition-all disabled:opacity-50 border border-purple-500/30"
         >
           <Sparkles size={16} className={isGenerating ? 'animate-spin' : ''} />
-          {isGenerating ? 'AI가 추천곡을 찾고 있어요...' : '✨ AI 추천 받기'}
+          {isGenerating ? t('aiRecommending') : t('aiRecommendButton')}
         </button>
       </div>
 
@@ -354,8 +357,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
               <Music size={32} className="opacity-50" />
             </div>
-            <p className="font-medium mb-1">재생 목록이 비어있습니다</p>
-            <p className="text-sm text-gray-600">위의 "AI 추천 받기"를 눌러보세요!</p>
+            <p className="font-medium mb-1">{t('emptyPlaylist')}</p>
+            <p className="text-sm text-gray-600">{t('emptyPlaylistHint')}</p>
           </div>
         ) : (
           <DndContext

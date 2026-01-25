@@ -14,7 +14,8 @@ import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
-import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut, Users, UserX } from 'lucide-react';
+import { useI18n, languageOptions, Language, getCurrentLanguageInfo } from './services/i18n';
+import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut, Users, UserX, Globe } from 'lucide-react';
 
 // Initial Data
 const SYSTEM_AI: User = { id: 'ai-1', name: 'TubeBot', avatar: '', isAi: true };
@@ -27,16 +28,27 @@ const INITIAL_VIDEO: Video = {
 };
 
 const App: React.FC = () => {
+  // --- i18n ---
+  const { language, setLanguage, t } = useI18n();
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+
   // --- State ---
   const [hasJoined, setHasJoined] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [users, setUsers] = useState<User[]>([SYSTEM_AI]);
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 'welcome', userId: 'ai-1', text: '안녕! TubeParty에 온 걸 환영해! 👋', timestamp: Date.now() }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [playlist, setPlaylist] = useState<Video[]>([INITIAL_VIDEO]);
   const [currentVideo, setCurrentVideo] = useState<Video>(INITIAL_VIDEO);
+  
+  // 초기 환영 메시지 설정
+  const welcomeMessageSetRef = useRef(false);
+  useEffect(() => {
+    if (!welcomeMessageSetRef.current) {
+      welcomeMessageSetRef.current = true;
+      setMessages([{ id: 'welcome', userId: 'ai-1', text: t('welcomeMessage'), timestamp: Date.now() }]);
+    }
+  }, [t]);
 
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -128,7 +140,7 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, {
           id: `reconnected-${Date.now()}`,
           userId: 'ai-1',
-          text: `🔄 세션이 복원되었어! ${nickname}님, 다시 돌아온 걸 환영해!`,
+          text: `🔄 ${t('sessionRestored', { name: nickname })}`,
           timestamp: Date.now()
         }]);
       } catch (error) {
@@ -150,12 +162,12 @@ const App: React.FC = () => {
         case 'JOIN':
           if (!users.some(u => u.id === action.payload.user.id)) {
             setUsers(prev => [...prev, action.payload.user]);
-            setMessages(prev => [...prev, {
-              id: `sys-${Date.now()}`,
-              userId: 'ai-1',
-              text: `${action.payload.user.name}님이 입장했어! 🎉`,
-              timestamp: Date.now()
-            }]);
+          setMessages(prev => [...prev, {
+            id: `sys-${Date.now()}`,
+            userId: 'ai-1',
+            text: t('userJoined', { name: action.payload.user.name }),
+            timestamp: Date.now()
+          }]);
           }
           break;
         case 'CHAT':
@@ -173,7 +185,7 @@ const App: React.FC = () => {
           setMessages(prev => [...prev, {
             id: `sys-vid-${Date.now()}`,
             userId: 'ai-1',
-            text: `영상이 변경되었어! 📺: ${action.payload.video.title}`,
+            text: `${t('videoChanged')} ${action.payload.video.title}`,
             timestamp: Date.now()
           }]);
           break;
@@ -262,7 +274,7 @@ const App: React.FC = () => {
           setMessages(prev => [...prev, {
             id: `join-${fu.id}-${Date.now()}`,
             userId: 'ai-1',
-            text: `👋 ${fu.name}님이 입장했습니다!`,
+            text: t('userJoinedShort', { name: fu.name }),
             timestamp: Date.now()
           }]);
         }
@@ -279,7 +291,7 @@ const App: React.FC = () => {
           setMessages(prev => [...prev, {
             id: `leave-${prevId}-${Date.now()}`,
             userId: 'ai-1',
-            text: `🚪 ${userName}님이 퇴장했습니다.`,
+            text: t('userLeft', { name: userName }),
             timestamp: Date.now()
           }]);
         }
@@ -355,12 +367,12 @@ const App: React.FC = () => {
       setMessages(prev => [...prev, {
         id: `room-created-${Date.now()}`,
         userId: 'ai-1',
-        text: `방이 생성됐어! 방 코드: 📋 ${newRoom.id}`,
+        text: `${t('roomCreated')} 📋 ${newRoom.id}`,
         timestamp: Date.now()
       }]);
     } catch (error) {
       console.error('Failed to create room:', error);
-      alert('방 생성에 실패했어요. 다시 시도해주세요.');
+      alert(t('roomCreateFailed'));
     }
   };
 
@@ -368,7 +380,7 @@ const App: React.FC = () => {
     try {
       const room = await firebaseService.getRoom(roomCode.toUpperCase());
       if (!room) {
-        alert('존재하지 않는 방 코드입니다.');
+        alert(t('roomNotExist'));
         return;
       }
 
@@ -398,12 +410,12 @@ const App: React.FC = () => {
       setMessages(prev => [...prev, {
         id: `joined-${Date.now()}`,
         userId: 'ai-1',
-        text: `${nickname}님이 입장했어! 환영해! 🎉`,
+        text: t('userJoined', { name: nickname }),
         timestamp: Date.now()
       }]);
     } catch (error) {
       console.error('Failed to join room:', error);
-      alert('방 참가에 실패했어요. 다시 시도해주세요.');
+      alert(t('roomJoinFailed'));
     }
   };
 
@@ -463,7 +475,7 @@ const App: React.FC = () => {
         const aiMessage: Message = {
           id: `ai-add-${Date.now()}`,
           userId: 'ai-1',
-          text: `"${results[0].title}" 추가했어! 🎵 지금 재생할게!`,
+          text: `"${results[0].title}" ${t('addedSong')}`,
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, aiMessage]);
@@ -473,7 +485,7 @@ const App: React.FC = () => {
         const aiMessage: Message = {
           id: `ai-notfound-${Date.now()}`,
           userId: 'ai-1',
-          text: `"${songQuery}" 검색 결과가 없어 😢 다른 키워드로 시도해줘!`,
+          text: `"${songQuery}" ${t('searchNotFound')}`,
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, aiMessage]);
@@ -546,14 +558,14 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-plist-${Date.now()}`,
           userId: 'ai-1',
-          text: `플레이리스트에서 영상 ${videos.length}개를 가져왔어! 📚`,
+          text: t('playlistLoaded', { count: videos.length }),
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
         syncService.broadcast({ type: 'CHAT', payload: { message: msg } });
         setUrlInput('');
       } else {
-        alert('플레이리스트를 불러올 수 없거나 비어있습니다.');
+        alert(t('playlistLoadFailed'));
       }
       setIsGenerating(false);
       return;
@@ -572,7 +584,7 @@ const App: React.FC = () => {
       handleVideoChange(newVideo);
       setUrlInput('');
     } else {
-      alert('올바른 유튜브 링크가 아닙니다.');
+      alert(t('invalidYoutubeLink'));
     }
   };
 
@@ -619,7 +631,7 @@ const App: React.FC = () => {
       const msg: Message = {
         id: `sys-rec-${Date.now()}`,
         userId: 'ai-1',
-        text: `AI 추천 영상 ${newRecs.length}개를 추가했어! 🎵`,
+        text: t('aiRecommendAdded', { count: newRecs.length }),
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, msg]);
@@ -665,7 +677,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, {
       id: `search-${Date.now()}`,
       userId: 'ai-1',
-      text: `🔍 "${video.title}" 검색해서 추가했어! 바로 재생할게!`,
+      text: t('searchAndAdd', { title: video.title }),
       timestamp: Date.now()
     }]);
   };
@@ -694,7 +706,7 @@ const App: React.FC = () => {
       setMessages(prev => [...prev, {
         id: `playlist-${Date.now()}`,
         userId: 'ai-1',
-        text: `📋 "${title}" 재생목록에서 ${videos.length}곡을 추가했어! 🎵`,
+        text: t('playlistAdded', { title, count: videos.length }),
         timestamp: Date.now()
       }]);
     }
@@ -758,7 +770,7 @@ const App: React.FC = () => {
     const msg: Message = {
       id: `sys-save-${Date.now()}`,
       userId: 'ai-1',
-      text: `플레이리스트 "${name}"가 저장되었어! 💾`,
+      text: t('playlistSaved', { name }),
       timestamp: Date.now()
     };
     setMessages(prev => [...prev, msg]);
@@ -773,7 +785,7 @@ const App: React.FC = () => {
     const msg: Message = {
       id: `sys-load-${Date.now()}`,
       userId: 'ai-1',
-      text: `플레이리스트 "${savedPlaylist.name}"를 불러왔어! 📂`,
+      text: t('playlistLoadedMsg', { name: savedPlaylist.name }),
       timestamp: Date.now()
     };
     setMessages(prev => [...prev, msg]);
@@ -823,7 +835,7 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-start-${Date.now()}`,
           userId: 'ai-1',
-          text: `${genreName} 장르 음악 ${videoList.length}개 추천 완료! 🎵`,
+          text: t('genreRecommendComplete', { genre: genreName, count: videoList.length }),
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
@@ -831,7 +843,7 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-error-${Date.now()}`,
           userId: 'ai-1',
-          text: `추천을 가져오지 못했어 😢 다시 시도해줘!`,
+          text: t('recommendFailed'),
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
@@ -870,7 +882,7 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-ranking-${Date.now()}`,
           userId: 'ai-1',
-          text: `🔥 대한민국 인기 급상승 차트 50곡을 가져왔어!`,
+          text: t('koreanPopularChart'),
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
@@ -878,7 +890,7 @@ const App: React.FC = () => {
         const msg: Message = {
           id: `sys-error-${Date.now()}`,
           userId: 'ai-1',
-          text: `차트를 가져오지 못했어 😢 다시 시도해줘!`,
+          text: t('chartFailed'),
           timestamp: Date.now()
         };
         setMessages(prev => [...prev, msg]);
@@ -901,7 +913,7 @@ const App: React.FC = () => {
     const msg: Message = {
       id: `sys-start-${Date.now()}`,
       userId: 'ai-1',
-      text: `"${savedPlaylist.name}" 플레이리스트로 시작! 📂`,
+      text: t('startWithPlaylist', { name: savedPlaylist.name }),
       timestamp: Date.now()
     };
     setMessages(prev => [...prev, msg]);
@@ -921,7 +933,7 @@ const App: React.FC = () => {
     const msg: Message = {
       id: `sys-start-${Date.now()}`,
       userId: 'ai-1',
-      text: `🔍 "${video.title}" 검색해서 시작! 🎵`,
+      text: t('searchAndStart', { title: video.title }),
       timestamp: Date.now()
     };
     setMessages(prev => [...prev, msg]);
@@ -1001,7 +1013,7 @@ const App: React.FC = () => {
           setMessages(prev => [...prev, {
             id: `search-${Date.now()}`,
             userId: 'ai-1',
-            text: `🔍 "${video.title}" 검색해서 추가했어! 바로 재생할게!`,
+            text: t('searchAndAdd', { title: video.title }),
             timestamp: Date.now()
           }]);
         }}
@@ -1030,7 +1042,7 @@ const App: React.FC = () => {
           setMessages(prev => [...prev, {
             id: `genre-${Date.now()}`,
             userId: 'ai-1',
-            text: `🎵 ${videos.length}곡이 추가되었어! 바로 재생할게!`,
+            text: t('songsAdded', { count: videos.length }),
             timestamp: Date.now()
           }]);
         }}
@@ -1039,7 +1051,7 @@ const App: React.FC = () => {
       {/* Toast */}
       {showCopiedToast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
-          <Check size={16} /> 방 코드가 복사되었습니다!
+          <Check size={16} /> {t('roomCodeCopied')}
         </div>
       )}
 
@@ -1086,7 +1098,7 @@ const App: React.FC = () => {
               <>
                 <input
                   type="text"
-                  placeholder="노래 검색..."
+                  placeholder={t('searchPlaceholder')}
                   className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1109,7 +1121,7 @@ const App: React.FC = () => {
               <>
                 <input
                   type="text"
-                  placeholder="유튜브 링크..."
+                  placeholder={t('linkPlaceholder')}
                   className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
@@ -1144,14 +1156,51 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
+          {/* Language Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowLanguageMenu(!showLanguageMenu)}
+              className="flex items-center gap-1 bg-gray-700 hover:bg-gray-600 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-gray-600"
+              title="Language"
+            >
+              <Globe size={14} />
+              <span className="hidden sm:inline">{getCurrentLanguageInfo(language).flag}</span>
+            </button>
+            
+            {showLanguageMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowLanguageMenu(false)} />
+                <div className="absolute top-full right-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[140px] z-50">
+                  {languageOptions.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => {
+                        setLanguage(lang.code);
+                        setShowLanguageMenu(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
+                        language === lang.code
+                          ? 'bg-brand-red text-white'
+                          : 'text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      <span>{lang.flag}</span>
+                      <span>{lang.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Playlist Browser Button */}
           <button
             onClick={() => setShowPlaylistBrowser(true)}
             className="flex items-center gap-1 sm:gap-2 bg-purple-600 hover:bg-purple-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-            title="재생목록 탐색"
+            title={t('playlist')}
           >
             <ListMusic size={16} />
-            <span className="hidden sm:inline">재생목록</span>
+            <span className="hidden sm:inline">{t('playlist')}</span>
           </button>
 
           {/* Sync Toggle Button */}
@@ -1162,20 +1211,20 @@ const App: React.FC = () => {
                 ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
                 : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
             }`}
-            title={isSyncEnabled ? '동기화 끄기' : '동기화 켜기'}
+            title={isSyncEnabled ? t('sync') : t('individualPlay')}
           >
             {isSyncEnabled ? <Users size={16} /> : <UserX size={16} />}
-            <span className="hidden sm:inline">{isSyncEnabled ? '동기화' : '개별재생'}</span>
+            <span className="hidden sm:inline">{isSyncEnabled ? t('sync') : t('individualPlay')}</span>
           </button>
 
           {/* Invite Button */}
           <button
             onClick={handleShare}
             className="flex items-center gap-1 sm:gap-2 bg-brand-gray hover:bg-gray-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-gray-600"
-            title="초대"
+            title={t('invite')}
           >
             <Share2 size={16} />
-            <span className="hidden sm:inline">초대</span>
+            <span className="hidden sm:inline">{t('invite')}</span>
           </button>
 
           {/* Voice Chat */}
@@ -1188,7 +1237,7 @@ const App: React.FC = () => {
                 setMessages(prev => [...prev, {
                   id: `voice-error-${Date.now()}`,
                   userId: 'ai-1',
-                  text: `🎤 음성채팅 오류: ${error}`,
+                  text: `${t('voiceError')} ${error}`,
                   timestamp: Date.now()
                 }]);
               }}
@@ -1214,10 +1263,10 @@ const App: React.FC = () => {
               setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
             }}
             className="flex items-center gap-1 sm:gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-red-600/30"
-            title="방 나가기"
+            title={t('leave')}
           >
             <LogOut size={14} />
-            <span className="hidden sm:inline">나가기</span>
+            <span className="hidden sm:inline">{t('leave')}</span>
           </button>
 
           {/* Mobile Tab Toggle */}
@@ -1241,7 +1290,7 @@ const App: React.FC = () => {
               : 'bg-gray-800 text-gray-400'
               }`}
           >
-            <Search size={14} />검색
+            <Search size={14} />{t('searchMobile')}
           </button>
           <button
             onClick={() => { setInputMode('link'); setSearchResults([]); }}
@@ -1250,7 +1299,7 @@ const App: React.FC = () => {
               : 'bg-gray-800 text-gray-400'
               }`}
           >
-            <LinkIcon size={14} />링크
+            <LinkIcon size={14} />{t('linkMobile')}
           </button>
         </div>
 
@@ -1260,7 +1309,7 @@ const App: React.FC = () => {
             <>
               <input
                 type="text"
-                placeholder="노래 제목, 아티스트 검색..."
+                placeholder={t('searchMobilePlaceholder')}
                 className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -1278,7 +1327,7 @@ const App: React.FC = () => {
             <>
               <input
                 type="text"
-                placeholder="유튜브 링크 추가..."
+                placeholder={t('linkMobilePlaceholder')}
                 className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
@@ -1330,7 +1379,7 @@ const App: React.FC = () => {
                 setMessages(prev => [...prev, {
                   id: `skip-${Date.now()}`,
                   userId: 'ai-1',
-                  text: `재생 불가 영상 스킵! ⏭️`,
+                  text: t('skipUnplayable'),
                   timestamp: Date.now()
                 }]);
               }

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User as UserIcon } from 'lucide-react';
 import { Message, User } from '../types';
+import { useI18n } from '../services/i18n';
 
 interface ChatRoomProps {
   messages: Message[];
@@ -17,6 +18,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   onSendMessage,
   isAiTyping
 }) => {
+  const { t } = useI18n();
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -44,16 +46,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     <div className="flex flex-col h-full bg-brand-gray/30 rounded-lg border border-brand-gray overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-brand-gray bg-brand-dark/50 flex justify-between items-center">
-        <h3 className="font-semibold text-white">실시간 채팅</h3>
+        <h3 className="font-semibold text-white">{t('liveChat')}</h3>
         <div className="flex items-center space-x-2 text-xs text-gray-400">
           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          <span>{humanUsers.length}명 참여중</span>
+          <span>{humanUsers.length}{t('participantsCount')}</span>
         </div>
       </div>
 
       {/* Participants Bar - Always visible */}
       <div className="px-3 py-2 bg-brand-dark/30 border-b border-brand-gray/50 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-        <span className="text-xs text-gray-500 shrink-0">👥 참여자:</span>
+        <span className="text-xs text-gray-500 shrink-0">👥 {t('participants')}</span>
         {humanUsers.length > 0 ? (
           humanUsers.map((user) => (
             <div
@@ -67,11 +69,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 <UserIcon size={10} />
               </div>
               <span>{user.name}</span>
-              {user.id === currentUser.id && <span className="text-[10px]">(나)</span>}
+              {user.id === currentUser.id && <span className="text-[10px]">({t('me')})</span>}
             </div>
           ))
         ) : (
-          <span className="text-xs text-gray-500">아직 아무도 없어요</span>
+          <span className="text-xs text-gray-500">{t('noParticipants')}</span>
         )}
       </div>
 
@@ -94,7 +96,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
                 {/* Bubble */}
                 <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <span className="text-xs text-gray-400 mb-1 ml-1">{msg.userName || sender?.name || '알 수 없음'}</span>
+                  <span className="text-xs text-gray-400 mb-1 ml-1">{msg.userName || sender?.name || t('unknownUser')}</span>
                   <div
                     className={`px-3 py-2 rounded-2xl text-sm break-words
                       ${isMe
@@ -138,7 +140,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="메시지 보내기... (@AI로 봇 호출)"
+            placeholder={t('messagePlaceholder')}
             className="w-full bg-gray-800 text-white pl-4 pr-12 py-3 rounded-full border border-gray-700 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red transition-all"
           />
           <button
