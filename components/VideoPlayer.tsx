@@ -87,6 +87,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const lastSyncTimeRef = useRef<number>(0);
   const isSyncingRef = useRef<boolean>(false);
   const lastAppliedSyncRef = useRef<number>(0);
+  const progressIntervalRef = useRef<number | null>(null);
+  const endCheckTimeoutRef = useRef<number | null>(null);
+  const lastPlaybackTimeRef = useRef<number>(0);
+  const lastDurationRef = useRef<number>(0);
+  const endHandledRef = useRef<boolean>(false);
   
   // 에러 재시도 관련 refs
   const errorRetryCountRef = useRef<number>(0);
@@ -189,6 +194,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     playerReadyRef.current = false;
     videoStartedRef.current = false;
     errorRetryCountRef.current = 0;
+    lastPlaybackTimeRef.current = 0;
+    lastDurationRef.current = 0;
+    endHandledRef.current = false;
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    if (endCheckTimeoutRef.current) {
+      clearTimeout(endCheckTimeoutRef.current);
+      endCheckTimeoutRef.current = null;
+    }
 
     // Destroy existing player
     if (playerRef.current) {
@@ -214,16 +230,59 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           console.log('YouTube State Change:', event.data);
           // -1 = unstarted, 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = video cued
           
+          const updatePlaybackSnapshot = () => {
+            const player = playerRef.current;
+            if (!player) return;
+            try {
+              const currentTime = player.getCurrentTime?.();
+              const duration = player.getDuration?.();
+              if (typeof currentTime === 'number' && !Number.isNaN(currentTime)) {
+                lastPlaybackTimeRef.current = currentTime;
+              }
+              if (typeof duration === 'number' && !Number.isNaN(duration) && duration > 0) {
+                lastDurationRef.current = duration;
+              }
+            } catch (e) {
+              // ignore
+            }
+          };
+          const stopProgressMonitor = () => {
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+          };
+          const startProgressMonitor = () => {
+            if (progressIntervalRef.current) return;
+            updatePlaybackSnapshot();
+            progressIntervalRef.current = window.setInterval(updatePlaybackSnapshot, 500);
+          };
+          const handleRealEnd = () => {
+            if (endHandledRef.current) return;
+            endHandledRef.current = true;
+            videoStartedRef.current = false;
+            onVideoEndRef.current?.();
+          };
+          
           // 재생/일시정지 상태 변경시 동기화 브로드캐스트
           if (event.data === 1) { // Playing
             videoStartedRef.current = true; // 비디오가 실제로 재생 시작됨
             errorRetryCountRef.current = 0; // 에러 카운트 리셋
+            endHandledRef.current = false;
+            startProgressMonitor();
             broadcastSync(true);
           } else if (event.data === 2) { // Paused
+            updatePlaybackSnapshot();
+            stopProgressMonitor();
             broadcastSync(false);
+          } else if (event.data === 3) { // Buffering
+            startProgressMonitor();
+          } else if (event.data === -1 || event.data === 5) { // Unstarted / Video cued
+            stopProgressMonitor();
           }
           
           if (event.data === 0) {
+            stopProgressMonitor();
             // 비디오가 실제로 끝났는지 확인 (광고 종료나 버퍼링 문제로 인한 false positive 방지)
             const player = playerRef.current;
             if (player && typeof player.getDuration === 'function' && typeof player.getCurrentTime === 'function') {
@@ -238,15 +297,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   return;
                 }
                 
-                // 비디오 길이가 유효하고, 현재 시간이 총 시간의 85% 이상일 때만 끝난 것으로 처리
-                // 최소 10초 이상 재생되었어야 함 (매우 짧은 비디오 제외)
-                const minPlayTime = Math.min(10, duration * 0.5);
-                if (duration > 0 && currentTime >= minPlayTime && (currentTime / duration >= 0.85)) {
+                const safeDuration = duration > 0 ? duration : lastDurationRef.current;
+                const effectiveTime = Math.max(currentTime, lastPlaybackTimeRef.current);
+                const minPlayTime = Math.min(10, safeDuration * 0.5);
+                const isNearEnd = safeDuration > 0 &&
+                  (safeDuration - effectiveTime <= 2 || effectiveTime / safeDuration >= 0.85);
+                if (safeDuration > 0 && effectiveTime >= minPlayTime && isNearEnd) {
                   console.log('Video actually ended! Calling onVideoEnd...');
-                  videoStartedRef.current = false;
-                  onVideoEndRef.current?.();
+                  handleRealEnd();
                 } else {
-                  console.log('State 0 received but video not really ended (possibly ad ended or buffering issue), ignoring...');
+                  console.log('State 0 received but end not confirmed. Rechecking shortly...');
+                  if (endCheckTimeoutRef.current) {
+                    clearTimeout(endCheckTimeoutRef.current);
+                  }
+                  endCheckTimeoutRef.current = window.setTimeout(() => {
+                    if (endHandledRef.current) return;
+                    const retryPlayer = playerRef.current;
+                    if (!retryPlayer) return;
+                    try {
+                      const retryState = retryPlayer.getPlayerState?.();
+                      const retryDuration = retryPlayer.getDuration?.() ?? lastDurationRef.current;
+                      const retryTime = retryPlayer.getCurrentTime?.() ?? 0;
+                      const retryEffectiveTime = Math.max(retryTime, lastPlaybackTimeRef.current);
+                      const retryMinPlay = Math.min(10, retryDuration * 0.5);
+                      const retryNearEnd = retryDuration > 0 &&
+                        (retryDuration - retryEffectiveTime <= 2 || retryEffectiveTime / retryDuration >= 0.85);
+                      if (retryState === 0 && retryDuration > 0 && retryEffectiveTime >= retryMinPlay && retryNearEnd) {
+                        console.log('Video end confirmed after delay. Calling onVideoEnd...');
+                        handleRealEnd();
+                      } else {
+                        console.log('End check failed. Assuming ad ended or playback resumed.');
+                      }
+                    } catch (e) {
+                      // ignore
+                    }
+                  }, 1000);
                 }
               } catch (e) {
                 console.error('Error checking video duration:', e);
@@ -337,6 +422,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         // seek 체크 인터벌 정리
         if ((playerRef.current as any).__seekCheckInterval) {
           clearInterval((playerRef.current as any).__seekCheckInterval);
+        }
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        if (endCheckTimeoutRef.current) {
+          clearTimeout(endCheckTimeoutRef.current);
+          endCheckTimeoutRef.current = null;
         }
         try {
           playerRef.current.destroy();
