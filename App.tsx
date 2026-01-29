@@ -595,6 +595,9 @@ const App: React.FC = () => {
   };
 
   const handleVideoChange = useCallback((video: Video) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoChange',message:'handleVideoChange called',data:{newVideoId:video.id,newVideoTitle:video.title,prevVideoId:currentVideoRef.current?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
+    // #endregion
     // currentVideoRef 업데이트 (Firebase sync에서 중복 방지용)
     currentVideoRef.current = video;
     setCurrentVideo(video);
@@ -734,18 +737,27 @@ const App: React.FC = () => {
   const handleVideoEnd = useCallback(() => {
     // playlistRef를 사용하여 항상 최신 playlist 참조
     const currentPlaylist = playlistRef.current;
+    const currentVid = currentVideoRef.current;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd',message:'handleVideoEnd called',data:{repeatMode,isShuffleOn,playlistLength:currentPlaylist.length,currentVideoId:currentVid.id,playlistIds:currentPlaylist.map(v=>v.id)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
+    // #endregion
+    
     console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn, 'Playlist length:', currentPlaylist.length);
     
     if (repeatMode === 'one') {
       // 한 곡 반복: 같은 비디오를 다시 재생
-      const currentVid = currentVideoRef.current;
       // 같은 비디오를 다시 재생하기 위해 강제로 비디오 변경 트리거
       handleVideoChange({ ...currentVid });
       return;
     }
 
-    const currentVid = currentVideoRef.current;
     const currentIndex = currentPlaylist.findIndex(v => v.id === currentVid.id);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:index',message:'Current index calculated',data:{currentIndex,nextIndex:currentIndex+1,playlistLength:currentPlaylist.length,willPlayNext:currentIndex+1<currentPlaylist.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion
+    
     console.log('Current Index:', currentIndex, 'Playlist Length:', currentPlaylist.length);
 
     if (isShuffleOn) {
@@ -760,12 +772,19 @@ const App: React.FC = () => {
     } else {
       const nextIndex = currentIndex + 1;
       if (nextIndex < currentPlaylist.length) {
-        console.log('Playing next video:', currentPlaylist[nextIndex]);
-        handleVideoChange(currentPlaylist[nextIndex]);
+        const nextVideo = currentPlaylist[nextIndex];
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:playNext',message:'Playing next video',data:{nextVideoId:nextVideo.id,nextVideoTitle:nextVideo.title},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+        // #endregion
+        console.log('Playing next video:', nextVideo);
+        handleVideoChange(nextVideo);
       } else if (repeatMode === 'all' && currentPlaylist.length > 0) {
         console.log('Looping to first video');
         handleVideoChange(currentPlaylist[0]);
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:endOfPlaylist',message:'End of playlist reached',data:{currentIndex,playlistLength:currentPlaylist.length,repeatMode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         console.log('End of playlist');
       }
     }

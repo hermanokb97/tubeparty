@@ -186,6 +186,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [videoId, currentUserId, syncEnabled]);
 
   const initPlayer = useCallback(async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VideoPlayer.tsx:initPlayer',message:'initPlayer called',data:{videoId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     await loadYouTubeAPI();
 
     if (!containerRef.current) return;
@@ -258,9 +261,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             progressIntervalRef.current = window.setInterval(updatePlaybackSnapshot, 500);
           };
           const handleRealEnd = () => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VideoPlayer.tsx:handleRealEnd',message:'handleRealEnd called',data:{endHandledAlready:endHandledRef.current,videoId,hasOnVideoEnd:!!onVideoEndRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+            // #endregion
             if (endHandledRef.current) return;
             endHandledRef.current = true;
             videoStartedRef.current = false;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VideoPlayer.tsx:handleRealEnd:calling',message:'Calling onVideoEnd callback',data:{videoId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
             onVideoEndRef.current?.();
           };
           
