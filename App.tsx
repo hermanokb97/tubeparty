@@ -201,6 +201,12 @@ const App: React.FC = () => {
     currentVideoRef.current = currentVideo;
   }, [currentVideo]);
 
+  // playlist를 ref로 추적하여 stale closure 방지
+  const playlistRef = useRef(playlist);
+  useEffect(() => {
+    playlistRef.current = playlist;
+  }, [playlist]);
+
   // --- Firebase Real-time Sync ---
   useEffect(() => {
     if (!hasJoined || !currentRoom) return;
@@ -726,36 +732,44 @@ const App: React.FC = () => {
   };
 
   const handleVideoEnd = useCallback(() => {
-    console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn);
+    // playlistRef를 사용하여 항상 최신 playlist 참조
+    const currentPlaylist = playlistRef.current;
+    console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn, 'Playlist length:', currentPlaylist.length);
+    
     if (repeatMode === 'one') {
-      // 현재 비디오 ref를 사용하여 최신 값 참조
-      setCurrentVideo(prev => ({ ...prev }));
+      // 한 곡 반복: 같은 비디오를 다시 재생
+      const currentVid = currentVideoRef.current;
+      // 같은 비디오를 다시 재생하기 위해 강제로 비디오 변경 트리거
+      handleVideoChange({ ...currentVid });
       return;
     }
 
     const currentVid = currentVideoRef.current;
-    const currentIndex = playlist.findIndex(v => v.id === currentVid.id);
-    console.log('Current Index:', currentIndex, 'Playlist Length:', playlist.length);
+    const currentIndex = currentPlaylist.findIndex(v => v.id === currentVid.id);
+    console.log('Current Index:', currentIndex, 'Playlist Length:', currentPlaylist.length);
 
     if (isShuffleOn) {
-      const otherVideos = playlist.filter(v => v.id !== currentVid.id);
+      const otherVideos = currentPlaylist.filter(v => v.id !== currentVid.id);
       if (otherVideos.length > 0) {
         const randomVideo = otherVideos[Math.floor(Math.random() * otherVideos.length)];
         handleVideoChange(randomVideo);
+      } else if (currentPlaylist.length === 1) {
+        // 플레이리스트에 한 곡만 있으면 그 곡 다시 재생
+        handleVideoChange({ ...currentPlaylist[0] });
       }
     } else {
       const nextIndex = currentIndex + 1;
-      if (nextIndex < playlist.length) {
-        console.log('Playing next video:', playlist[nextIndex]);
-        handleVideoChange(playlist[nextIndex]);
-      } else if (repeatMode === 'all' && playlist.length > 0) {
+      if (nextIndex < currentPlaylist.length) {
+        console.log('Playing next video:', currentPlaylist[nextIndex]);
+        handleVideoChange(currentPlaylist[nextIndex]);
+      } else if (repeatMode === 'all' && currentPlaylist.length > 0) {
         console.log('Looping to first video');
-        handleVideoChange(playlist[0]);
+        handleVideoChange(currentPlaylist[0]);
       } else {
         console.log('End of playlist');
       }
     }
-  }, [playlist, isShuffleOn, repeatMode, handleVideoChange]);
+  }, [isShuffleOn, repeatMode, handleVideoChange]);
 
   // Load saved playlists on mount
   useEffect(() => {
