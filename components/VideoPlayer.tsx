@@ -77,6 +77,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onPlaybackSync,
   syncEnabled = true
 }) => {
+  // #region agent log
+  React.useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VideoPlayer.tsx:props',message:'VideoPlayer received new videoId prop',data:{videoId,videoIdLength:videoId?.length,videoIdType:typeof videoId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+  }, [videoId]);
+  // #endregion
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const onVideoEndRef = useRef(onVideoEnd);
@@ -219,6 +224,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       playerRef.current = null;
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VideoPlayer.tsx:createPlayer',message:'Creating new YT.Player',data:{videoId,containerExists:!!containerRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     // Create new player
     playerRef.current = new window.YT.Player(containerRef.current, {
       videoId: videoId,

@@ -177,6 +177,9 @@ const App: React.FC = () => {
           });
           break;
         case 'VIDEO_CHANGE':
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:syncService:VIDEO_CHANGE',message:'syncService VIDEO_CHANGE received',data:{incomingVideoId:action.payload.video.id,currentRefVideoId:currentVideoRef.current?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H7'})}).catch(()=>{});
+          // #endregion
           setCurrentVideo(action.payload.video);
           setPlaylist(prev => {
             if (prev.some(v => v.id === action.payload.video.id)) return prev;
@@ -207,14 +210,32 @@ const App: React.FC = () => {
     playlistRef.current = playlist;
   }, [playlist]);
 
+  // 로컬 비디오 변경 시간 추적 (Firebase 구독자에서 이전 상태 무시용)
+  const lastLocalVideoChangeRef = useRef<number>(0);
+
   // --- Firebase Real-time Sync ---
   useEffect(() => {
     if (!hasJoined || !currentRoom) return;
 
     // Subscribe to room updates from Firebase
     const unsubscribe = firebaseService.subscribeToRoom(currentRoom.id, (data) => {
+      const timeSinceLocalChange = Date.now() - lastLocalVideoChangeRef.current;
+      const shouldIgnore = timeSinceLocalChange < 2000; // 2초 내 로컬 변경이 있으면 무시
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:firebaseSubscribe',message:'Firebase room update received',data:{incomingVideoId:data.currentVideo?.id,currentRefVideoId:currentVideoRef.current?.id,timeSinceLocalChange,shouldIgnore,willUpdate:!shouldIgnore && data.currentVideo && data.currentVideo.id !== currentVideoRef.current.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
+      // #endregion
+      
+      // 최근 로컬 변경 후 2초 내에는 Firebase 데이터 무시 (이전 상태가 돌아오는 것 방지)
+      if (shouldIgnore) {
+        return;
+      }
+      
       // ref를 사용하여 항상 최신 currentVideo와 비교
       if (data.currentVideo && data.currentVideo.id !== currentVideoRef.current.id) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:firebaseSubscribe:update',message:'Updating currentVideo from Firebase',data:{newVideoId:data.currentVideo.id,prevVideoId:currentVideoRef.current.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
         setCurrentVideo(data.currentVideo);
       }
       if (data.playlist && data.playlist.length > 0) {
@@ -389,6 +410,10 @@ const App: React.FC = () => {
         alert(t('roomNotExist'));
         return;
       }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleJoinRoom',message:'Guest joined room',data:{roomId:room.id,roomCurrentVideo:room.currentVideo?.id,roomPlaylist:room.playlist?.map(v=>v.id)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
 
       setCurrentRoom(room);
 
@@ -598,6 +623,8 @@ const App: React.FC = () => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoChange',message:'handleVideoChange called',data:{newVideoId:video.id,newVideoTitle:video.title,prevVideoId:currentVideoRef.current?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
     // #endregion
+    // 로컬 변경 시간 기록 (Firebase 구독자에서 이전 상태 무시용)
+    lastLocalVideoChangeRef.current = Date.now();
     // currentVideoRef 업데이트 (Firebase sync에서 중복 방지용)
     currentVideoRef.current = video;
     setCurrentVideo(video);
@@ -613,6 +640,9 @@ const App: React.FC = () => {
     // Sync to Firebase (after state update) - ref를 사용하여 최신 room 참조
     setTimeout(() => {
       const room = currentRoomRef.current;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoChange:firebaseSync',message:'About to sync to Firebase',data:{hasRoom:!!room,roomId:room?.id,videoId:video.id,playlistLength:updatedPlaylist.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       if (room && updatedPlaylist.length > 0) {
         firebaseService.updateCurrentVideo(room.id, video);
         firebaseService.updatePlaylist(room.id, updatedPlaylist);
@@ -674,6 +704,9 @@ const App: React.FC = () => {
   };
 
   const handleSelectSearchResult = (result: { id: string; title: string; channelTitle: string; thumbnail: string }) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleSelectSearchResult',message:'Search result selected',data:{videoId:result.id,videoTitle:result.title,hasCurrentRoom:!!currentRoom,currentRoomId:currentRoom?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
+    // #endregion
     const video: Video = {
       id: result.id,
       title: result.title,
