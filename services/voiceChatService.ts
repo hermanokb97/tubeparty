@@ -67,6 +67,9 @@ export class VoiceChatService {
 
     async initialize(): Promise<MediaStream> {
         try {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:start',message:'Requesting microphone access',data:{roomId:this.roomId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
             this.localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -75,18 +78,30 @@ export class VoiceChatService {
                 },
                 video: false,
             });
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:success',message:'Microphone access granted',data:{roomId:this.roomId,trackCount:this.localStream.getTracks().length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
             console.log('[VoiceChat] Local stream initialized');
             return this.localStream;
         } catch (error) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:error',message:'Microphone access failed',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
             console.error('[VoiceChat] Failed to get user media:', error);
             throw new Error('Failed to access microphone');
         }
     }
 
     async join(): Promise<void> {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:start',message:'VoiceChatService.join() called',data:{roomId:this.roomId,userId:this.odedUserId,hasLocalStream:!!this.localStream},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
         this.callbacks.onStatusChange?.('🎤 마이크 연결 중...');
         
         if (!this.localStream) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:initMic',message:'Initializing microphone',data:{roomId:this.roomId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
             await this.initialize();
         }
 
@@ -96,14 +111,23 @@ export class VoiceChatService {
         // Clean up any stale signaling data from previous sessions
         try {
             console.log('[VoiceChat] Cleaning up stale signaling data...');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:cleanup',message:'Cleaning up stale signaling data',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
+            // #endregion
             await remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`));
             await remove(ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`));
             await remove(ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`));
         } catch (error) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:cleanupError',message:'Error cleaning up stale data',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
             console.warn('[VoiceChat] Error cleaning up stale data:', error);
         }
 
         // Register user in voice chat room
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:register',message:'Registering user in voice chat room',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
         const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`);
         await set(userRef, {
             odedUserId: this.odedUserId,
@@ -115,6 +139,9 @@ export class VoiceChatService {
         this.listenForAnswers();
         this.listenForIceCandidates();
         
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:complete',message:'VoiceChatService.join() completed',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
         // 참가 완료 알림
         this.callbacks.onStatusChange?.('✅ 연결됨 - 다른 참가자 대기 중');
     }
