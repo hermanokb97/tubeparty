@@ -64,6 +64,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
   const [saveInfo, setSaveInfo] = useState(true);
   const [hasSavedData, setHasSavedData] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [useApi, setUseApi] = useState(true);
 
   // 저장된 정보 불러오기
   useEffect(() => {
@@ -84,12 +85,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (nickname.trim() && apiKey.trim()) {
+    // API 사용 시에만 apiKey 필수
+    if (nickname.trim() && (!useApi || apiKey.trim())) {
       // 정보 저장 옵션이 켜져있으면 저장
       if (saveInfo) {
-        saveCredentials(nickname.trim(), apiKey.trim());
+        saveCredentials(nickname.trim(), useApi ? apiKey.trim() : '');
       }
-      onCreateRoom(nickname.trim(), apiKey.trim());
+      onCreateRoom(nickname.trim(), useApi ? apiKey.trim() : '');
     }
   };
 
@@ -230,25 +232,53 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                <Key size={14} />
-                {t('apiKey')}
+            {/* API 사용 여부 토글 */}
+            <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={useApi}
+                    onChange={(e) => setUseApi(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                    {useApi && <Key size={12} className="text-white" />}
+                  </div>
+                </div>
+                <span className="text-sm text-gray-300 group-hover:text-white transition-colors font-medium">
+                  {t('useApiKey')}
+                </span>
               </label>
-              <input
-                type="password"
-                required
-                className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-sm"
-                placeholder={t('apiKeyPlaceholder')}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                  Google AI Studio
-                </a>{t('apiKeyHelp')}
-              </p>
+              {!useApi && (
+                <p className="text-xs text-yellow-500/80 mt-2 ml-8">
+                  {t('apiKeyOptional')}
+                </p>
+              )}
             </div>
+
+            {/* API 키 입력 (useApi가 true일 때만 표시) */}
+            {useApi && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                  <Key size={14} />
+                  {t('apiKey')}
+                </label>
+                <input
+                  type="password"
+                  required={useApi}
+                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-sm"
+                  placeholder={t('apiKeyPlaceholder')}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                    Google AI Studio
+                  </a>{t('apiKeyHelp')}
+                </p>
+              </div>
+            )}
 
             {/* 정보 저장 옵션 */}
             <label className="flex items-center gap-3 cursor-pointer group">
@@ -273,7 +303,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
             <button
               type="submit"
               className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 disabled:opacity-50"
-              disabled={!nickname.trim() || !apiKey.trim()}
+              disabled={!nickname.trim() || (useApi && !apiKey.trim())}
             >
               {t('createButton')}
               <ArrowRight size={20} />

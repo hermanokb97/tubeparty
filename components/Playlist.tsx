@@ -134,6 +134,7 @@ interface PlaylistProps {
   onSelectVideo: (video: Video) => void;
   onGenerateRecommendations: () => void;
   isGenerating: boolean;
+  hasApiKey?: boolean;
   isShuffleOn?: boolean;
   repeatMode?: RepeatMode;
   onToggleShuffle?: () => void;
@@ -152,6 +153,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onSelectVideo,
   onGenerateRecommendations,
   isGenerating,
+  hasApiKey = true,
   isShuffleOn = false,
   repeatMode = 'off',
   onToggleShuffle,
@@ -335,15 +337,20 @@ export const Playlist: React.FC<PlaylistProps> = ({
         </div>
       </div>
 
-      {/* AI Recommend Button */}
+      {/* AI Recommend Button - API 키가 있을 때만 활성화 */}
       <div className="p-2 border-b border-brand-gray bg-gray-900/50">
         <button
           onClick={onGenerateRecommendations}
-          disabled={isGenerating}
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600/30 to-pink-600/30 hover:from-purple-600/50 hover:to-pink-600/50 text-purple-300 px-3 py-2 rounded-lg transition-all disabled:opacity-50 border border-purple-500/30"
+          disabled={isGenerating || !hasApiKey}
+          className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all border ${
+            hasApiKey 
+              ? 'bg-gradient-to-r from-purple-600/30 to-pink-600/30 hover:from-purple-600/50 hover:to-pink-600/50 text-purple-300 border-purple-500/30 disabled:opacity-50'
+              : 'bg-gray-800/50 text-gray-500 border-gray-700 cursor-not-allowed'
+          }`}
+          title={!hasApiKey ? 'API 키가 없어 AI 추천을 사용할 수 없습니다' : ''}
         >
           <Sparkles size={16} className={isGenerating ? 'animate-spin' : ''} />
-          {isGenerating ? t('aiRecommending') : t('aiRecommendButton')}
+          {isGenerating ? t('aiRecommending') : hasApiKey ? t('aiRecommendButton') : '🔒 AI 추천 (API 필요)'}
         </button>
       </div>
 

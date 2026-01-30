@@ -525,29 +525,33 @@ const App: React.FC = () => {
       }
     }
 
-    // AI Logic (normal chat)
-    const shouldAiReply = text.includes('@AI') || text.includes('추천') || Math.random() < 0.2;
+    // AI Logic (normal chat) - API 키가 있을 때만 작동
+    const hasApiKey = currentRoom?.apiKey && currentRoom.apiKey.trim() !== '';
+    
+    if (hasApiKey) {
+      const shouldAiReply = text.includes('@AI') || text.includes('추천') || Math.random() < 0.2;
 
-    if (shouldAiReply) {
-      setIsAiTyping(true);
-      const history = messages.slice(-5).map(m => ({
-        role: users.find(u => u.id === m.userId)?.isAi ? 'ai' : 'user',
-        text: m.text
-      }));
-      history.push({ role: 'user', text });
+      if (shouldAiReply) {
+        setIsAiTyping(true);
+        const history = messages.slice(-5).map(m => ({
+          role: users.find(u => u.id === m.userId)?.isAi ? 'ai' : 'user',
+          text: m.text
+        }));
+        history.push({ role: 'user', text });
 
-      const reply = await getAiChatResponse(history, currentVideo.title, currentRoom?.apiKey || '');
+        const reply = await getAiChatResponse(history, currentVideo.title, currentRoom?.apiKey || '');
 
-      const aiMessage: Message = {
-        id: `ai-reply-${Date.now()}`,
-        userId: 'ai-1',
-        text: reply,
-        timestamp: Date.now()
-      };
+        const aiMessage: Message = {
+          id: `ai-reply-${Date.now()}`,
+          userId: 'ai-1',
+          text: reply,
+          timestamp: Date.now()
+        };
 
-      setIsAiTyping(false);
-      setMessages(prev => [...prev, aiMessage]);
-      syncService.broadcast({ type: 'CHAT', payload: { message: aiMessage } });
+        setIsAiTyping(false);
+        setMessages(prev => [...prev, aiMessage]);
+        syncService.broadcast({ type: 'CHAT', payload: { message: aiMessage } });
+      }
     }
   };
 
@@ -654,6 +658,10 @@ const App: React.FC = () => {
   }, []);
 
   const handleGenerateRecommendations = async () => {
+    // API 키가 없으면 추천 기능 비활성화
+    if (!currentRoom?.apiKey || currentRoom.apiKey.trim() === '') {
+      return;
+    }
     setIsGenerating(true);
     const recs = await getVideoRecommendations(currentVideo.title, "재미있는 영상이나 유사한 분위기", currentRoom?.apiKey || '');
 
@@ -1529,6 +1537,7 @@ const App: React.FC = () => {
               onSelectVideo={handleVideoChange}
               onGenerateRecommendations={handleGenerateRecommendations}
               isGenerating={isGenerating}
+              hasApiKey={!!(currentRoom?.apiKey && currentRoom.apiKey.trim() !== '')}
               isShuffleOn={isShuffleOn}
               repeatMode={repeatMode}
               onToggleShuffle={handleToggleShuffle}

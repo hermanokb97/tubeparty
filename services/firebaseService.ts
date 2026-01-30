@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, push, update, remove, DatabaseReference } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, push, update, remove, onDisconnect } from "firebase/database";
 import { Video, Message, Room } from '../types';
 
 // Firebase configuration
@@ -131,13 +131,24 @@ interface RoomUser {
     joinedAt: number;
 }
 
-// Add user to room
+// Add user to room (with automatic cleanup on disconnect)
 export const addUserToRoom = async (roomId: string, user: { id: string; name: string }): Promise<void> => {
-    await set(ref(database, `rooms/${roomId}/users/${user.id}`), {
+    const userRef = ref(database, `rooms/${roomId}/users/${user.id}`);
+    
+    // Set user data
+    await set(userRef, {
         id: user.id,
         name: user.name,
         joinedAt: Date.now()
     });
+    
+    // Set up automatic removal when connection is lost (browser closed, network lost, etc.)
+    // This is handled server-side by Firebase, so it works even if the browser crashes
+    await onDisconnect(userRef).remove();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'firebaseService.ts:addUserToRoom',message:'User added with onDisconnect handler',data:{roomId,userId:user.id,userName:user.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H3'})}).catch(()=>{});
+    // #endregion
 };
 
 // Remove user from room
