@@ -90,16 +90,15 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
 
     // Join voice chat
     const handleJoin = async () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VoiceChat.tsx:handleJoin:start',message:'handleJoin called',data:{roomId,userId,hasExistingRef:!!voiceChatRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-        // #endregion
         setIsConnecting(true);
         setAudioStatus('🎤 연결 중...');
         
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VoiceChat.tsx:handleJoin:creating',message:'Creating VoiceChatService',data:{roomId,userId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
+            if (voiceChatRef.current) {
+                await voiceChatRef.current.leave();
+                voiceChatRef.current = null;
+            }
+
             voiceChatRef.current = new VoiceChatService(roomId, userId, {
                 onRemoteStream: handleRemoteStream,
                 onUserLeft: handleUserLeft,
@@ -109,15 +108,9 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             });
 
             await voiceChatRef.current.join();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VoiceChat.tsx:handleJoin:success',message:'VoiceChat join succeeded',data:{roomId,userId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
             setIsJoined(true);
             setAudioStatus('✅ 연결됨');
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VoiceChat.tsx:handleJoin:error',message:'VoiceChat join failed',data:{roomId,userId,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
-            // #endregion
             handleError(error as Error);
         } finally {
             setIsConnecting(false);

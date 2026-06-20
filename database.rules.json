@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "voiceChat": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    ".read": false,
+    ".write": false
+  }
+}

@@ -27,6 +27,9 @@ const INITIAL_VIDEO: Video = {
   thumbnail: 'https://picsum.photos/seed/lofi/320/180'
 };
 
+const arePlaylistsEqual = (a: Video[], b: Video[]) =>
+  a.length === b.length && a.every((video, index) => video.id === b[index]?.id);
+
 const App: React.FC = () => {
   // --- i18n ---
   const { language, setLanguage, t } = useI18n();
@@ -35,6 +38,10 @@ const App: React.FC = () => {
   // --- State ---
   const [hasJoined, setHasJoined] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   const [users, setUsers] = useState<User[]>([SYSTEM_AI]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -177,9 +184,6 @@ const App: React.FC = () => {
           });
           break;
         case 'VIDEO_CHANGE':
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:syncService:VIDEO_CHANGE',message:'syncService VIDEO_CHANGE received',data:{incomingVideoId:action.payload.video.id,currentRefVideoId:currentVideoRef.current?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H7'})}).catch(()=>{});
-          // #endregion
           setCurrentVideo(action.payload.video);
           setPlaylist(prev => {
             if (prev.some(v => v.id === action.payload.video.id)) return prev;
@@ -210,49 +214,52 @@ const App: React.FC = () => {
     playlistRef.current = playlist;
   }, [playlist]);
 
-  // 로컬 비디오 변경 시간 추적 (Firebase 구독자에서 이전 상태 무시용)
-  const lastLocalVideoChangeRef = useRef<number>(0);
+  // Firebase update metadata tracking
+  const lastAppliedCurrentVideoAtRef = useRef<number>(0);
+  const lastAppliedPlaylistAtRef = useRef<number>(0);
 
   // --- Firebase Real-time Sync ---
   useEffect(() => {
-    if (!hasJoined || !currentRoom) return;
+    if (!hasJoined || !currentRoom || !currentUser) return;
 
     // Subscribe to room updates from Firebase
     const unsubscribe = firebaseService.subscribeToRoom(currentRoom.id, (data) => {
-      const timeSinceLocalChange = Date.now() - lastLocalVideoChangeRef.current;
-      const shouldIgnore = timeSinceLocalChange < 2000; // 2초 내 로컬 변경이 있으면 무시
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:firebaseSubscribe',message:'Firebase room update received',data:{incomingVideoId:data.currentVideo?.id,currentRefVideoId:currentVideoRef.current?.id,timeSinceLocalChange,shouldIgnore,willUpdate:!shouldIgnore && data.currentVideo && data.currentVideo.id !== currentVideoRef.current.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      
-      // 최근 로컬 변경 후 2초 내에는 Firebase 데이터 무시 (이전 상태가 돌아오는 것 방지)
-      if (shouldIgnore) {
-        return;
-      }
-      
+      const videoUpdatedAt = data.currentVideoUpdatedAt || 0;
+      const playlistUpdatedAt = data.playlistUpdatedAt || 0;
+      const isOwnVideoAck = data.currentVideoUpdatedBy === currentUser.id &&
+        data.currentVideo?.id === currentVideoRef.current.id;
+      const isOwnPlaylistAck = data.playlistUpdatedBy === currentUser.id &&
+        arePlaylistsEqual(data.playlist || [], playlistRef.current);
+
       // ref를 사용하여 항상 최신 currentVideo와 비교
-      if (data.currentVideo && data.currentVideo.id !== currentVideoRef.current.id) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:firebaseSubscribe:update',message:'Updating currentVideo from Firebase',data:{newVideoId:data.currentVideo.id,prevVideoId:currentVideoRef.current.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
-        // #endregion
+      if (
+        data.currentVideo &&
+        data.currentVideo.id !== currentVideoRef.current.id &&
+        (!isOwnVideoAck || videoUpdatedAt > lastAppliedCurrentVideoAtRef.current)
+      ) {
+        currentVideoRef.current = data.currentVideo;
         setCurrentVideo(data.currentVideo);
       }
-      if (data.playlist && data.playlist.length > 0) {
+      if (videoUpdatedAt > lastAppliedCurrentVideoAtRef.current) {
+        lastAppliedCurrentVideoAtRef.current = videoUpdatedAt;
+      }
+      if (data.playlist) {
         // 함수형 업데이트로 playlist 비교
         setPlaylist(prev => {
           // 내용이 같으면 업데이트하지 않음
-          if (prev.length === data.playlist.length &&
-            prev.every((v, i) => v.id === data.playlist[i]?.id)) {
+          if (arePlaylistsEqual(prev, data.playlist) || isOwnPlaylistAck) {
             return prev;
           }
           return data.playlist;
         });
+        if (playlistUpdatedAt > lastAppliedPlaylistAtRef.current) {
+          lastAppliedPlaylistAtRef.current = playlistUpdatedAt;
+        }
       }
     });
 
     return () => unsubscribe();
-  }, [hasJoined, currentRoom?.id]);
+  }, [hasJoined, currentRoom?.id, currentUser?.id]);
 
   // --- Firebase Real-time Chat ---
   useEffect(() => {
@@ -410,10 +417,6 @@ const App: React.FC = () => {
         alert(t('roomNotExist'));
         return;
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleJoinRoom',message:'Guest joined room',data:{roomId:room.id,roomCurrentVideo:room.currentVideo?.id,roomPlaylist:room.playlist?.map(v=>v.id)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
 
       setCurrentRoom(room);
 
@@ -585,8 +588,8 @@ const App: React.FC = () => {
           const newVideos = videos.filter(v => !playlist.some(p => p.id === v.id));
           const updatedPlaylist = [...playlist, ...newVideos];
 
-          if (newVideos.length > 0) {
-            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+          if (newVideos.length > 0 && currentUser) {
+            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
           }
         }
 
@@ -624,11 +627,6 @@ const App: React.FC = () => {
   };
 
   const handleVideoChange = useCallback((video: Video) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoChange',message:'handleVideoChange called',data:{newVideoId:video.id,newVideoTitle:video.title,prevVideoId:currentVideoRef.current?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
-    // #endregion
-    // 로컬 변경 시간 기록 (Firebase 구독자에서 이전 상태 무시용)
-    lastLocalVideoChangeRef.current = Date.now();
     // currentVideoRef 업데이트 (Firebase sync에서 중복 방지용)
     currentVideoRef.current = video;
     setCurrentVideo(video);
@@ -644,12 +642,10 @@ const App: React.FC = () => {
     // Sync to Firebase (after state update) - ref를 사용하여 최신 room 참조
     setTimeout(() => {
       const room = currentRoomRef.current;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoChange:firebaseSync',message:'About to sync to Firebase',data:{hasRoom:!!room,roomId:room?.id,videoId:video.id,playlistLength:updatedPlaylist.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      if (room && updatedPlaylist.length > 0) {
-        firebaseService.updateCurrentVideo(room.id, video);
-        firebaseService.updatePlaylist(room.id, updatedPlaylist);
+      const actorId = currentUserRef.current?.id;
+      if (room && actorId && updatedPlaylist.length > 0) {
+        firebaseService.updateCurrentVideo(room.id, video, actorId);
+        firebaseService.updatePlaylist(room.id, updatedPlaylist, actorId);
       }
     }, 0);
 
@@ -672,8 +668,8 @@ const App: React.FC = () => {
       setPlaylist(updatedPlaylist);
 
       // Sync to Firebase
-      if (currentRoom) {
-        firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+      if (currentRoom && currentUser) {
+        firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
       }
       const msg: Message = {
         id: `sys-rec-${Date.now()}`,
@@ -712,9 +708,6 @@ const App: React.FC = () => {
   };
 
   const handleSelectSearchResult = (result: { id: string; title: string; channelTitle: string; thumbnail: string }) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleSelectSearchResult',message:'Search result selected',data:{videoId:result.id,videoTitle:result.title,hasCurrentRoom:!!currentRoom,currentRoomId:currentRoom?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
-    // #endregion
     const video: Video = {
       id: result.id,
       title: result.title,
@@ -749,8 +742,8 @@ const App: React.FC = () => {
       handleVideoChange(videoList[0]);
 
       // Update Firebase if in a room
-      if (currentRoom) {
-        firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videoList]);
+      if (currentRoom && currentUser) {
+        firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videoList], currentUser.id);
       }
 
       setMessages(prev => [...prev, {
@@ -780,10 +773,6 @@ const App: React.FC = () => {
     const currentPlaylist = playlistRef.current;
     const currentVid = currentVideoRef.current;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd',message:'handleVideoEnd called',data:{repeatMode,isShuffleOn,playlistLength:currentPlaylist.length,currentVideoId:currentVid.id,playlistIds:currentPlaylist.map(v=>v.id)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-    // #endregion
-    
     console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn, 'Playlist length:', currentPlaylist.length);
     
     if (repeatMode === 'one') {
@@ -794,10 +783,6 @@ const App: React.FC = () => {
     }
 
     const currentIndex = currentPlaylist.findIndex(v => v.id === currentVid.id);
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:index',message:'Current index calculated',data:{currentIndex,nextIndex:currentIndex+1,playlistLength:currentPlaylist.length,willPlayNext:currentIndex+1<currentPlaylist.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
     
     console.log('Current Index:', currentIndex, 'Playlist Length:', currentPlaylist.length);
 
@@ -814,18 +799,12 @@ const App: React.FC = () => {
       const nextIndex = currentIndex + 1;
       if (nextIndex < currentPlaylist.length) {
         const nextVideo = currentPlaylist[nextIndex];
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:playNext',message:'Playing next video',data:{nextVideoId:nextVideo.id,nextVideoTitle:nextVideo.title},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-        // #endregion
         console.log('Playing next video:', nextVideo);
         handleVideoChange(nextVideo);
       } else if (repeatMode === 'all' && currentPlaylist.length > 0) {
         console.log('Looping to first video');
         handleVideoChange(currentPlaylist[0]);
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleVideoEnd:endOfPlaylist',message:'End of playlist reached',data:{currentIndex,playlistLength:currentPlaylist.length,repeatMode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
         console.log('End of playlist');
       }
     }
@@ -854,6 +833,10 @@ const App: React.FC = () => {
     setPlaylist(savedPlaylist.videos);
     if (savedPlaylist.videos.length > 0) {
       setCurrentVideo(savedPlaylist.videos[0]);
+    }
+    if (currentRoom && currentUser && savedPlaylist.videos.length > 0) {
+      firebaseService.updateCurrentVideo(currentRoom.id, savedPlaylist.videos[0], currentUser.id);
+      firebaseService.updatePlaylist(currentRoom.id, savedPlaylist.videos, currentUser.id);
     }
 
     const msg: Message = {
@@ -898,9 +881,9 @@ const App: React.FC = () => {
         setPlaylist(videoList);
 
         // Sync to Firebase
-        if (currentRoom) {
-          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0]);
-          firebaseService.updatePlaylist(currentRoom.id, videoList);
+        if (currentRoom && currentUser) {
+          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0], currentUser.id);
+          firebaseService.updatePlaylist(currentRoom.id, videoList, currentUser.id);
         }
 
         const genreInfo = GENRE_OPTIONS.find(g => g.id === genre);
@@ -948,9 +931,9 @@ const App: React.FC = () => {
         setCurrentVideo(videoList[0]);
         setPlaylist(videoList);
 
-        if (currentRoom) {
-          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0]);
-          firebaseService.updatePlaylist(currentRoom.id, videoList);
+        if (currentRoom && currentUser) {
+          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0], currentUser.id);
+          firebaseService.updatePlaylist(currentRoom.id, videoList, currentUser.id);
         }
 
         const msg: Message = {
@@ -982,6 +965,10 @@ const App: React.FC = () => {
     if (savedPlaylist.videos.length > 0) {
       setCurrentVideo(savedPlaylist.videos[0]);
     }
+    if (currentRoom && currentUser && savedPlaylist.videos.length > 0) {
+      firebaseService.updateCurrentVideo(currentRoom.id, savedPlaylist.videos[0], currentUser.id);
+      firebaseService.updatePlaylist(currentRoom.id, savedPlaylist.videos, currentUser.id);
+    }
     setShowStartModal(false);
 
     const msg: Message = {
@@ -999,9 +986,9 @@ const App: React.FC = () => {
     setShowStartModal(false);
 
     // Sync to Firebase
-    if (currentRoom) {
-      firebaseService.updateCurrentVideo(currentRoom.id, video);
-      firebaseService.updatePlaylist(currentRoom.id, [video]);
+    if (currentRoom && currentUser) {
+      firebaseService.updateCurrentVideo(currentRoom.id, video, currentUser.id);
+      firebaseService.updatePlaylist(currentRoom.id, [video], currentUser.id);
     }
 
     const msg: Message = {
@@ -1017,15 +1004,15 @@ const App: React.FC = () => {
     const newPlaylist = playlist.filter(v => v.id !== videoId);
     setPlaylist(newPlaylist);
 
-    if (currentRoom) {
-      firebaseService.updatePlaylist(currentRoom.id, newPlaylist);
+    if (currentRoom && currentUser) {
+      firebaseService.updatePlaylist(currentRoom.id, newPlaylist, currentUser.id);
 
       // If we removed the current video, play the next one (or stop/none)
       if (videoId === currentVideo.id) {
         if (newPlaylist.length > 0) {
           const nextVideo = newPlaylist[0];
           setCurrentVideo(nextVideo);
-          firebaseService.updateCurrentVideo(currentRoom.id, nextVideo);
+          firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
         }
       }
     }
@@ -1033,8 +1020,8 @@ const App: React.FC = () => {
 
   const handleReorderPlaylist = (newOrder: Video[]) => {
     setPlaylist(newOrder);
-    if (currentRoom) {
-      firebaseService.updatePlaylist(currentRoom.id, newOrder);
+    if (currentRoom && currentUser) {
+      firebaseService.updatePlaylist(currentRoom.id, newOrder, currentUser.id);
     }
   };
 
@@ -1134,9 +1121,9 @@ const App: React.FC = () => {
           setCurrentVideo(videoToPlay);
 
           // Sync to Firebase
-          if (currentRoom) {
-            firebaseService.updateCurrentVideo(currentRoom.id, videoToPlay);
-            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist);
+          if (currentRoom && currentUser) {
+            firebaseService.updateCurrentVideo(currentRoom.id, videoToPlay, currentUser.id);
+            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
           }
 
           // Broadcast local
@@ -1495,8 +1482,8 @@ const App: React.FC = () => {
                 const nextIndex = (currentIndex + 1) % playlist.length;
                 const nextVideo = playlist[nextIndex];
                 setCurrentVideo(nextVideo);
-                if (currentRoom) {
-                  firebaseService.updateCurrentVideo(currentRoom.id, nextVideo);
+                if (currentRoom && currentUser) {
+                  firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
                 }
                 setMessages(prev => [...prev, {
                   id: `skip-${Date.now()}`,

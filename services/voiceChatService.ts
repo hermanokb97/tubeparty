@@ -1,28 +1,33 @@
-// WebRTC Voice Chat Service
-// Uses Firebase Realtime Database for signaling
+import {
+    getDatabase,
+    ref,
+    set,
+    push,
+    remove,
+    onChildAdded,
+    onChildRemoved,
+    onDisconnect,
+    Database,
+} from 'firebase/database';
+import { ensureFirebaseReady, getFirebaseDatabase } from './firebaseService';
 
-import { getDatabase, ref, set, push, remove, onChildAdded, onChildRemoved, Database } from 'firebase/database';
-
-// Lazy initialization of database
 let database: Database | null = null;
 const getDb = (): Database => {
     if (!database) {
-        database = getDatabase();
+        try {
+            database = getFirebaseDatabase();
+        } catch {
+            database = getDatabase();
+        }
     }
     return database;
 };
 
-// STUN/TURN servers for NAT traversal
-// 무료 공개 TURN 서버 포함 (OpenRelay 프로젝트)
 const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
-        // Google STUN servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        // OpenRelay TURN servers (무료, https://www.metered.ca/tools/openrelay/)
-        {
-            urls: 'stun:openrelay.metered.ca:80',
-        },
+        { urls: 'stun:openrelay.metered.ca:80' },
         {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -47,29 +52,33 @@ interface VoiceChatCallbacks {
     onUserLeft: (userId: string) => void;
     onError: (error: Error) => void;
     onConnectionStateChange?: (userId: string, state: string) => void;
-    onStatusChange?: (status: string) => void; // 전체 상태 변경
+    onStatusChange?: (status: string) => void;
 }
+
+type ListenerCleanup = () => void;
+
+const getSignalingUserId = (data: any): string | undefined => data?.userId || data?.odedUserId;
 
 export class VoiceChatService {
     private roomId: string;
-    private odedUserId: string;
+    private userId: string;
     private localStream: MediaStream | null = null;
     private peerConnections: Map<string, RTCPeerConnection> = new Map();
     private pendingCandidates: Map<string, RTCIceCandidate[]> = new Map();
     private callbacks: VoiceChatCallbacks;
-    private isMuted: boolean = false;
+    private isMuted = false;
+    private isJoined = false;
+    private isLeaving = false;
+    private listenerCleanups: ListenerCleanup[] = [];
 
-    constructor(roomId: string, odedUserId: string, callbacks: VoiceChatCallbacks) {
+    constructor(roomId: string, userId: string, callbacks: VoiceChatCallbacks) {
         this.roomId = roomId;
-        this.odedUserId = odedUserId;
+        this.userId = userId;
         this.callbacks = callbacks;
     }
 
     async initialize(): Promise<MediaStream> {
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:start',message:'Requesting microphone access',data:{roomId:this.roomId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             this.localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -78,93 +87,68 @@ export class VoiceChatService {
                 },
                 video: false,
             });
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:success',message:'Microphone access granted',data:{roomId:this.roomId,trackCount:this.localStream.getTracks().length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
-            console.log('[VoiceChat] Local stream initialized');
             return this.localStream;
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:initialize:error',message:'Microphone access failed',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             console.error('[VoiceChat] Failed to get user media:', error);
             throw new Error('Failed to access microphone');
         }
     }
 
     async join(): Promise<void> {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:start',message:'VoiceChatService.join() called',data:{roomId:this.roomId,userId:this.odedUserId,hasLocalStream:!!this.localStream},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        this.callbacks.onStatusChange?.('🎤 마이크 연결 중...');
-        
+        if (this.isJoined) return;
+
+        this.callbacks.onStatusChange?.('Connecting microphone...');
+
         if (!this.localStream) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:initMic',message:'Initializing microphone',data:{roomId:this.roomId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             await this.initialize();
         }
 
-        this.callbacks.onStatusChange?.('🔗 서버 연결 중...');
-        console.log('[VoiceChat] Joining room:', this.roomId);
+        await ensureFirebaseReady();
+        this.callbacks.onStatusChange?.('Connecting voice server...');
 
-        // Clean up any stale signaling data from previous sessions
-        try {
-            console.log('[VoiceChat] Cleaning up stale signaling data...');
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:cleanup',message:'Cleaning up stale signaling data',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
-            // #endregion
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`));
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`));
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`));
-        } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:cleanupError',message:'Error cleaning up stale data',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
-            console.warn('[VoiceChat] Error cleaning up stale data:', error);
-        }
+        await this.cleanupOwnSignalingData();
 
-        // Register user in voice chat room
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:register',message:'Registering user in voice chat room',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`);
+        const userRef = ref(getDb(), `voiceChat/${this.roomId}/users/${this.userId}`);
         await set(userRef, {
-            odedUserId: this.odedUserId,
+            userId: this.userId,
             joinedAt: Date.now(),
         });
+        await onDisconnect(userRef).remove();
 
         this.listenForUsers();
         this.listenForOffers();
         this.listenForAnswers();
         this.listenForIceCandidates();
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec787ced-0267-41e0-98e1-e1b366dcec00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voiceChatService.ts:join:complete',message:'VoiceChatService.join() completed',data:{roomId:this.roomId,userId:this.odedUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        // 참가 완료 알림
-        this.callbacks.onStatusChange?.('✅ 연결됨 - 다른 참가자 대기 중');
+
+        this.isJoined = true;
+        this.callbacks.onStatusChange?.('Connected - waiting for others');
     }
 
     async leave(): Promise<void> {
-        console.log('[VoiceChat] Leaving room');
+        if (this.isLeaving) return;
+        this.isLeaving = true;
+
+        this.listenerCleanups.forEach(cleanup => cleanup());
+        this.listenerCleanups = [];
 
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
             this.localStream = null;
         }
 
-        this.peerConnections.forEach((pc) => pc.close());
+        this.peerConnections.forEach(pc => pc.close());
         this.peerConnections.clear();
         this.pendingCandidates.clear();
 
         try {
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/users/${this.odedUserId}`));
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`));
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`));
-            await remove(ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`));
+            await ensureFirebaseReady();
+            await this.cleanupOwnSignalingData();
+            await remove(ref(getDb(), `voiceChat/${this.roomId}/users/${this.userId}`));
         } catch (error) {
             console.error('[VoiceChat] Error cleaning up:', error);
+        } finally {
+            this.isJoined = false;
+            this.isLeaving = false;
         }
     }
 
@@ -182,71 +166,70 @@ export class VoiceChatService {
         return this.isMuted;
     }
 
+    private async cleanupOwnSignalingData(): Promise<void> {
+        await Promise.all([
+            remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${this.userId}`)),
+            remove(ref(getDb(), `voiceChat/${this.roomId}/answers/${this.userId}`)),
+            remove(ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.userId}`)),
+        ]);
+    }
+
+    private addListenerCleanup(cleanup: ListenerCleanup): void {
+        this.listenerCleanups.push(cleanup);
+    }
+
     private createPeerConnection(remoteUserId: string): RTCPeerConnection {
-        console.log('[VoiceChat] Creating peer connection for:', remoteUserId);
+        const existing = this.peerConnections.get(remoteUserId);
+        if (existing) return existing;
 
         const pc = new RTCPeerConnection(ICE_SERVERS);
 
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                pc.addTrack(track, this.localStream!);
-            });
-        }
+        this.localStream?.getTracks().forEach(track => {
+            pc.addTrack(track, this.localStream!);
+        });
 
         pc.ontrack = (event) => {
-            console.log('[VoiceChat] Received remote track from:', remoteUserId);
             if (event.streams[0]) {
                 this.callbacks.onRemoteStream(remoteUserId, event.streams[0]);
             }
         };
 
         pc.onicecandidate = async (event) => {
-            if (event.candidate) {
-                console.log('[VoiceChat] Sending ICE candidate to:', remoteUserId);
-                try {
-                    const candidateRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${remoteUserId}/${this.odedUserId}`);
-                    await push(candidateRef, event.candidate.toJSON());
-                } catch (error) {
-                    console.error('[VoiceChat] Failed to send ICE candidate:', error);
-                }
+            if (!event.candidate) return;
+
+            try {
+                const candidateRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${remoteUserId}/${this.userId}`);
+                await push(candidateRef, event.candidate.toJSON());
+            } catch (error) {
+                console.error('[VoiceChat] Failed to send ICE candidate:', error);
             }
         };
 
         pc.oniceconnectionstatechange = () => {
-            console.log('[VoiceChat] ICE state:', pc.iceConnectionState);
             this.callbacks.onConnectionStateChange?.(remoteUserId, `ICE: ${pc.iceConnectionState}`);
-            
+
             if (pc.iceConnectionState === 'checking') {
-                this.callbacks.onStatusChange?.('🔄 연결 확인 중...');
+                this.callbacks.onStatusChange?.('Checking voice connection...');
             } else if (pc.iceConnectionState === 'connected') {
-                console.log('[VoiceChat] ICE connected successfully!');
-                this.callbacks.onStatusChange?.('🔊 음성 연결됨');
+                this.callbacks.onStatusChange?.('Voice connected');
             } else if (pc.iceConnectionState === 'failed') {
-                console.log('[VoiceChat] ICE failed, restarting...');
-                this.callbacks.onStatusChange?.('⚠️ 연결 재시도 중...');
+                this.callbacks.onStatusChange?.('Retrying voice connection...');
                 pc.restartIce();
             } else if (pc.iceConnectionState === 'disconnected') {
-                this.callbacks.onStatusChange?.('⏳ 연결 끊김, 재연결 중...');
+                this.callbacks.onStatusChange?.('Voice disconnected, reconnecting...');
             }
         };
 
         pc.onconnectionstatechange = () => {
-            console.log('[VoiceChat] Connection state:', pc.connectionState);
-            this.callbacks.onConnectionStateChange?.(remoteUserId, `연결: ${pc.connectionState}`);
-            
+            this.callbacks.onConnectionStateChange?.(remoteUserId, `Connection: ${pc.connectionState}`);
+
             if (pc.connectionState === 'connecting') {
-                this.callbacks.onStatusChange?.('🔄 피어 연결 중...');
+                this.callbacks.onStatusChange?.('Connecting peer...');
             } else if (pc.connectionState === 'connected') {
-                console.log('[VoiceChat] Peer connected successfully!');
-                this.callbacks.onStatusChange?.('🔊 음성 연결됨');
+                this.callbacks.onStatusChange?.('Voice connected');
             } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 this.handleUserDisconnected(remoteUserId);
             }
-        };
-        
-        // ICE gathering 상태 모니터링
-        pc.onicegatheringstatechange = () => {
-            console.log('[VoiceChat] ICE gathering state:', pc.iceGatheringState);
         };
 
         this.peerConnections.set(remoteUserId, pc);
@@ -257,38 +240,36 @@ export class VoiceChatService {
         const pending = this.pendingCandidates.get(remoteUserId) || [];
         const pc = this.peerConnections.get(remoteUserId);
 
-        if (pc && pending.length > 0) {
-            console.log('[VoiceChat] Applying', pending.length, 'pending candidates');
-            for (const candidate of pending) {
-                try {
-                    await pc.addIceCandidate(candidate);
-                } catch (error) {
-                    console.warn('[VoiceChat] Failed to add pending candidate');
-                }
+        if (!pc || pending.length === 0) return;
+
+        for (const candidate of pending) {
+            try {
+                await pc.addIceCandidate(candidate);
+            } catch (error) {
+                console.warn('[VoiceChat] Failed to add pending candidate:', error);
             }
-            this.pendingCandidates.delete(remoteUserId);
         }
+        this.pendingCandidates.delete(remoteUserId);
     }
 
     private listenForUsers(): void {
         const usersRef = ref(getDb(), `voiceChat/${this.roomId}/users`);
 
-        onChildAdded(usersRef, async (snapshot) => {
-            const userData = snapshot.val();
-            const remoteUserId = userData.odedUserId;
+        this.addListenerCleanup(onChildAdded(usersRef, async (snapshot) => {
+            const remoteUserId = getSignalingUserId(snapshot.val());
+            if (!remoteUserId || remoteUserId === this.userId || this.peerConnections.has(remoteUserId)) return;
 
-            if (remoteUserId !== this.odedUserId && !this.peerConnections.has(remoteUserId)) {
-                if (this.odedUserId > remoteUserId) {
-                    console.log('[VoiceChat] Creating offer for:', remoteUserId);
-                    await this.createOffer(remoteUserId);
-                }
+            if (this.userId > remoteUserId) {
+                await this.createOffer(remoteUserId);
             }
-        });
+        }));
 
-        onChildRemoved(usersRef, (snapshot) => {
-            const userData = snapshot.val();
-            this.handleUserDisconnected(userData.odedUserId);
-        });
+        this.addListenerCleanup(onChildRemoved(usersRef, (snapshot) => {
+            const remoteUserId = getSignalingUserId(snapshot.val());
+            if (remoteUserId) {
+                this.handleUserDisconnected(remoteUserId);
+            }
+        }));
     }
 
     private async createOffer(remoteUserId: string): Promise<void> {
@@ -301,13 +282,12 @@ export class VoiceChatService {
             });
             await pc.setLocalDescription(offer);
 
-            const offerRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${remoteUserId}/${this.odedUserId}`);
+            const offerRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${remoteUserId}/${this.userId}`);
             await set(offerRef, {
-                odedUserId: this.odedUserId,
+                userId: this.userId,
                 offer: offer.sdp,
                 type: offer.type,
             });
-            console.log('[VoiceChat] Offer sent to:', remoteUserId);
         } catch (error) {
             console.error('[VoiceChat] Failed to create offer:', error);
             this.callbacks.onError(error as Error);
@@ -315,103 +295,83 @@ export class VoiceChatService {
     }
 
     private listenForOffers(): void {
-        const offersRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${this.odedUserId}`);
+        const offersRef = ref(getDb(), `voiceChat/${this.roomId}/offers/${this.userId}`);
 
-        onChildAdded(offersRef, async (snapshot) => {
+        this.addListenerCleanup(onChildAdded(offersRef, async (snapshot) => {
             const data = snapshot.val();
-            const remoteUserId = data.odedUserId;
+            const remoteUserId = getSignalingUserId(data);
+            if (!remoteUserId || this.peerConnections.has(remoteUserId)) return;
 
-            console.log('[VoiceChat] Received offer from:', remoteUserId);
+            const pc = this.createPeerConnection(remoteUserId);
 
-            if (!this.peerConnections.has(remoteUserId)) {
-                const pc = this.createPeerConnection(remoteUserId);
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: data.type,
+                    sdp: data.offer,
+                }));
 
-                try {
-                    await pc.setRemoteDescription(new RTCSessionDescription({
-                        type: data.type,
-                        sdp: data.offer,
-                    }));
+                await this.applyPendingCandidates(remoteUserId);
 
-                    await this.applyPendingCandidates(remoteUserId);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
 
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-
-                    const answerRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${remoteUserId}/${this.odedUserId}`);
-                    await set(answerRef, {
-                        odedUserId: this.odedUserId,
-                        answer: answer.sdp,
-                        type: answer.type,
-                    });
-                    console.log('[VoiceChat] Answer sent to:', remoteUserId);
-                } catch (error) {
-                    console.error('[VoiceChat] Failed to handle offer:', error);
-                    this.callbacks.onError(error as Error);
-                }
+                const answerRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${remoteUserId}/${this.userId}`);
+                await set(answerRef, {
+                    userId: this.userId,
+                    answer: answer.sdp,
+                    type: answer.type,
+                });
+            } catch (error) {
+                console.error('[VoiceChat] Failed to handle offer:', error);
+                this.callbacks.onError(error as Error);
             }
-        });
+        }));
     }
 
     private listenForAnswers(): void {
-        const answersRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${this.odedUserId}`);
+        const answersRef = ref(getDb(), `voiceChat/${this.roomId}/answers/${this.userId}`);
 
-        onChildAdded(answersRef, async (snapshot) => {
+        this.addListenerCleanup(onChildAdded(answersRef, async (snapshot) => {
             const data = snapshot.val();
-            const remoteUserId = data.odedUserId;
+            const remoteUserId = getSignalingUserId(data);
+            if (!remoteUserId) return;
+
             const pc = this.peerConnections.get(remoteUserId);
+            if (!pc || (pc.signalingState !== 'have-local-offer' && pc.signalingState !== 'stable')) return;
 
-            console.log('[VoiceChat] Received answer from:', remoteUserId);
-            console.log('[VoiceChat] PC exists:', !!pc);
-            if (pc) {
-                console.log('[VoiceChat] Current signalingState:', pc.signalingState);
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: data.type as RTCSdpType,
+                    sdp: data.answer,
+                }));
+                await this.applyPendingCandidates(remoteUserId);
+            } catch (error) {
+                console.error('[VoiceChat] Failed to set remote description:', error);
+                this.callbacks.onError(error as Error);
             }
-
-            if (pc) {
-                // Accept answer if we're waiting for one (have-local-offer) or if state is stable but we haven't received remote track yet
-                if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable') {
-                    try {
-                        console.log('[VoiceChat] Setting remote description (answer)...');
-                        await pc.setRemoteDescription(new RTCSessionDescription({
-                            type: data.type as RTCSdpType,
-                            sdp: data.answer,
-                        }));
-                        console.log('[VoiceChat] Remote description set successfully');
-                        console.log('[VoiceChat] New signalingState:', pc.signalingState);
-                        await this.applyPendingCandidates(remoteUserId);
-                    } catch (error) {
-                        console.error('[VoiceChat] Failed to set remote description:', error);
-                        this.callbacks.onError(error as Error);
-                    }
-                } else {
-                    console.log('[VoiceChat] Skipping answer - signalingState is:', pc.signalingState);
-                }
-            } else {
-                console.log('[VoiceChat] No peer connection found for:', remoteUserId);
-            }
-        });
+        }));
     }
 
     private listenForIceCandidates(): void {
-        const candidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}`);
+        const candidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.userId}`);
 
-        onChildAdded(candidatesRef, (senderSnapshot) => {
+        this.addListenerCleanup(onChildAdded(candidatesRef, (senderSnapshot) => {
             const senderId = senderSnapshot.key;
             if (!senderId) return;
 
-            const senderCandidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.odedUserId}/${senderId}`);
-
-            onChildAdded(senderCandidatesRef, async (candidateSnapshot) => {
+            const senderCandidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.userId}/${senderId}`);
+            const cleanup = onChildAdded(senderCandidatesRef, async (candidateSnapshot) => {
                 const candidateData = candidateSnapshot.val();
                 if (!candidateData) return;
 
                 const pc = this.peerConnections.get(senderId);
                 const candidate = new RTCIceCandidate(candidateData);
 
-                if (pc && pc.remoteDescription) {
+                if (pc?.remoteDescription) {
                     try {
                         await pc.addIceCandidate(candidate);
                     } catch (error) {
-                        console.warn('[VoiceChat] Failed to add ICE candidate');
+                        console.warn('[VoiceChat] Failed to add ICE candidate:', error);
                     }
                 } else {
                     const pending = this.pendingCandidates.get(senderId) || [];
@@ -419,16 +379,18 @@ export class VoiceChatService {
                     this.pendingCandidates.set(senderId, pending);
                 }
             });
-        });
+
+            this.addListenerCleanup(cleanup);
+        }));
     }
 
-    private handleUserDisconnected(odedUserId: string): void {
-        const pc = this.peerConnections.get(odedUserId);
+    private handleUserDisconnected(userId: string): void {
+        const pc = this.peerConnections.get(userId);
         if (pc) {
             pc.close();
-            this.peerConnections.delete(odedUserId);
-            this.pendingCandidates.delete(odedUserId);
-            this.callbacks.onUserLeft(odedUserId);
+            this.peerConnections.delete(userId);
+            this.pendingCandidates.delete(userId);
+            this.callbacks.onUserLeft(userId);
         }
     }
 }

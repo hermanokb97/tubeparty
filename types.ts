@@ -49,4 +49,8 @@ export interface Room {
   createdAt: number;
   currentVideo?: Video;  // 현재 재생 중인 비디오
   playlist?: Video[];    // 플레이리스트
+  currentVideoUpdatedAt?: number;
+  currentVideoUpdatedBy?: string;
+  playlistUpdatedAt?: number;
+  playlistUpdatedBy?: string;
 }
