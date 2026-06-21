@@ -1,0 +1,29 @@
+- generic [ref=e3]:
+  - button "🇰🇷 한국어" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+    - generic [ref=e11]: 🇰🇷 한국어
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - img [ref=e15]
+      - heading "TubeParty AI" [level=1] [ref=e18]
+      - paragraph [ref=e19]: 친구들과 함께 유튜브를 즐기세요.
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - img [ref=e24]
+            - generic [ref=e27]: 저장된 정보
+          - button "Delete saved info" [ref=e28] [cursor=pointer]:
+            - img [ref=e29]
+        - generic [ref=e32]:
+          - generic [ref=e33]: A
+          - generic [ref=e34]:
+            - paragraph [ref=e35]: AppleTest
+            - paragraph [ref=e36]: 닉네임만 저장됨
+      - button "새 방 만들기" [ref=e37] [cursor=pointer]:
+        - img [ref=e38]
+        - text: 새 방 만들기
+      - button "방 참가하기" [ref=e39] [cursor=pointer]:
+        - img [ref=e40]
+        - text: 방 참가하기
+    - generic [ref=e45]: 방을 만들면 친구들과 공유할 수 있는 코드가 생성됩니다.

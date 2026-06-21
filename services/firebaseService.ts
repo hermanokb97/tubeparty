@@ -28,6 +28,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const database = getDatabase(app);
+const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
 let firebaseReadyPromise: Promise<void> | null = null;
 
@@ -48,6 +49,15 @@ export const ensureFirebaseReady = async (): Promise<void> => {
 
 export const getFirebaseDatabase = (): Database => database;
 
+const getCurrentAuthUid = async (): Promise<string> => {
+    await ensureFirebaseReady();
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+        throw new Error('Firebase auth user is not available.');
+    }
+    return uid;
+};
+
 const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
@@ -57,9 +67,29 @@ const generateRoomCode = (): string => {
     return code;
 };
 
+const generateInviteToken = (): string => {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
+const normalizeRoomCode = (roomId: string): string => roomId.trim().toUpperCase();
+
+const normalizeInviteToken = (token: string): string => token.trim().toLowerCase();
+
+const isValidInviteToken = (token: string): boolean => /^[a-f0-9]{48}$/.test(token);
+
+const isPermissionDenied = (error: unknown): boolean => {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    return code.toUpperCase().includes('PERMISSION_DENIED');
+};
+
 interface FirebaseRoom {
     apiKey: string;
     hostName: string;
+    createdByUid: string;
     createdAt: number;
     currentVideo: Video | null;
     playlist: Video[];
@@ -67,6 +97,17 @@ interface FirebaseRoom {
     currentVideoUpdatedBy?: string;
     playlistUpdatedAt?: number;
     playlistUpdatedBy?: string;
+}
+
+interface FirebaseInvite {
+    roomId: string;
+    createdByUid: string;
+    createdAt: number;
+    expiresAt: number;
+}
+
+export interface RoomInvite extends FirebaseInvite {
+    token: string;
 }
 
 interface RoomSnapshot {
@@ -90,6 +131,14 @@ const mapRoom = (roomId: string, data: FirebaseRoom): Room => ({
     playlistUpdatedAt: data.playlistUpdatedAt,
     playlistUpdatedBy: data.playlistUpdatedBy,
 });
+
+const addCurrentAuthToRoomMembers = async (roomId: string, nickname: string): Promise<void> => {
+    const uid = await getCurrentAuthUid();
+    await set(ref(database, `roomMembers/${roomId}/${uid}`), {
+        nickname,
+        joinedAt: Date.now(),
+    });
+};
 
 const subscribeAfterReady = (
     attach: () => () => void,
@@ -117,13 +166,14 @@ const subscribeAfterReady = (
 };
 
 export const createRoom = async (apiKey: string, hostName: string): Promise<Room> => {
-    await ensureFirebaseReady();
+    const uid = await getCurrentAuthUid();
 
     const roomId = generateRoomCode();
     const now = Date.now();
     const roomData: FirebaseRoom = {
         apiKey,
         hostName,
+        createdByUid: uid,
         createdAt: now,
         currentVideo: null,
         playlist: [],
@@ -132,15 +182,79 @@ export const createRoom = async (apiKey: string, hostName: string): Promise<Room
     };
 
     await set(ref(database, `rooms/${roomId}`), roomData);
+    await addCurrentAuthToRoomMembers(roomId, hostName);
     return mapRoom(roomId, roomData);
 };
 
 export const getRoom = async (roomId: string): Promise<Room | null> => {
     await ensureFirebaseReady();
 
-    const snapshot = await get(ref(database, `rooms/${roomId}`));
+    const snapshot = await get(ref(database, `rooms/${normalizeRoomCode(roomId)}`));
     if (!snapshot.exists()) return null;
-    return mapRoom(roomId, snapshot.val() as FirebaseRoom);
+    return mapRoom(normalizeRoomCode(roomId), snapshot.val() as FirebaseRoom);
+};
+
+export const joinRoomByCode = async (roomCode: string, nickname: string): Promise<Room | null> => {
+    const roomId = normalizeRoomCode(roomCode);
+    if (!roomId) return null;
+
+    try {
+        await addCurrentAuthToRoomMembers(roomId, nickname);
+        return await getRoom(roomId);
+    } catch (error) {
+        if (isPermissionDenied(error)) return null;
+        throw error;
+    }
+};
+
+export const createInvite = async (roomId: string): Promise<RoomInvite> => {
+    const uid = await getCurrentAuthUid();
+    const token = generateInviteToken();
+    const now = Date.now();
+    const invite: FirebaseInvite = {
+        roomId: normalizeRoomCode(roomId),
+        createdByUid: uid,
+        createdAt: now,
+        expiresAt: now + INVITE_TTL_MS,
+    };
+
+    await set(ref(database, `invites/${token}`), invite);
+    return { token, ...invite };
+};
+
+export const resolveInvite = async (token: string): Promise<RoomInvite | null> => {
+    await ensureFirebaseReady();
+
+    const normalizedToken = normalizeInviteToken(token);
+    if (!isValidInviteToken(normalizedToken)) return null;
+
+    try {
+        const snapshot = await get(ref(database, `invites/${normalizedToken}`));
+        if (!snapshot.exists()) return null;
+
+        const invite = snapshot.val() as FirebaseInvite;
+        if (!invite.roomId || typeof invite.expiresAt !== 'number' || invite.expiresAt <= Date.now()) {
+            return null;
+        }
+
+        return { token: normalizedToken, ...invite };
+    } catch (error) {
+        if (isPermissionDenied(error)) return null;
+        throw error;
+    }
+};
+
+export const joinRoomByInvite = async (token: string, nickname: string): Promise<Room | null> => {
+    const invite = await resolveInvite(token);
+    if (!invite) return null;
+
+    try {
+        await addCurrentAuthToRoomMembers(invite.roomId, nickname);
+        return await getRoom(invite.roomId);
+    } catch (error) {
+        if (isPermissionDenied(error)) return null;
+        throw error;
+    }
 };
 
 export const updateCurrentVideo = async (roomId: string, video: Video, actorId: string): Promise<void> => {

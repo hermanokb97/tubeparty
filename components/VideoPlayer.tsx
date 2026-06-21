@@ -509,7 +509,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const volumePresets = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
   return (
-    <div className="relative w-full h-0 pb-[56.25%] bg-black rounded-lg overflow-hidden shadow-2xl border border-brand-gray">
+    <div className="relative w-full h-0 pb-[56.25%] bg-black rounded-lg overflow-hidden shadow-[0_28px_80px_rgba(0,0,0,0.44)] border border-white/10">
       {/* YouTube Player Container - z-index 1 */}
       <div
         ref={containerRef}
@@ -521,7 +521,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {/* Sync indicator & Manual sync button */}
         {syncEnabled && (
           <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-auto">
-            <div className="bg-black/70 text-green-400 px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs">
+            <div className="bg-black/55 backdrop-blur-xl text-[#30D158] px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs border border-white/10">
               <Users size={12} />
               <span>동기화 중</span>
             </div>
@@ -529,8 +529,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               onClick={handleManualSync}
               className={`px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all ${
                 syncFeedback 
-                  ? 'bg-green-500 text-white' 
-                  : 'bg-black/70 text-yellow-400 hover:bg-yellow-500 hover:text-black'
+                  ? 'bg-[#30D158] text-black' 
+                  : 'bg-black/55 backdrop-blur-xl text-[#FFD60A] hover:bg-[#FFD60A] hover:text-black border border-white/10'
               }`}
               title="현재 재생 위치를 다른 사람들에게 공유"
             >
@@ -546,7 +546,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <div className="relative flex items-center gap-2 pointer-events-auto">
             <button
               onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-              className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors"
+              className="bg-black/55 hover:bg-black/75 backdrop-blur-xl text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors border border-white/10"
               title="음악 볼륨 조절"
             >
               <Music size={14} className="text-purple-400" />
@@ -556,7 +556,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             
             {/* Volume Slider with 10-step buttons */}
             {showVolumeSlider && (
-              <div className="absolute bottom-full left-0 mb-2 bg-black/95 rounded-lg p-3 flex flex-col items-center gap-3 shadow-xl border border-gray-700 z-50">
+              <div className="absolute bottom-full left-0 mb-2 bg-black/85 backdrop-blur-2xl rounded-lg p-3 flex flex-col items-center gap-3 shadow-xl border border-white/10 z-50">
                 <span className="text-sm font-medium text-purple-400">🎵 음악 볼륨</span>
                 
                 {/* Slider */}
@@ -567,7 +567,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   step="10"
                   value={isMusicMuted ? 0 : musicVolume}
                   onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
-                  className="w-40 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  className="w-40 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#5E5CE6]"
                 />
                 
                 {/* 10-step preset buttons */}
@@ -578,8 +578,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       onClick={() => handleMusicVolumeChange(vol)}
                       className={`w-8 h-7 text-xs rounded transition-all ${
                         musicVolume === vol && !isMusicMuted
-                          ? 'bg-purple-500 text-white font-bold'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          ? 'bg-[#5E5CE6] text-white font-semibold'
+                          : 'bg-white/10 text-gray-300 hover:bg-white/15'
                       }`}
                     >
                       {vol}
@@ -595,8 +595,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     onClick={handleMusicMuteToggle}
                     className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
                       isMusicMuted 
-                        ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50' 
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        ? 'bg-[#FF453A]/25 text-[#FF453A] hover:bg-[#FF453A]/35' 
+                        : 'bg-white/10 text-gray-300 hover:bg-white/15'
                     }`}
                   >
                     {isMusicMuted ? '음소거 해제' : '음소거'}
@@ -609,7 +609,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Skip button */}
           <button
             onClick={handleManualSkip}
-            className="bg-black/70 hover:bg-brand-red text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm pointer-events-auto"
+            className="bg-black/55 hover:bg-brand-red backdrop-blur-xl text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm pointer-events-auto border border-white/10"
             title="재생 안되면 클릭해서 스킵"
           >
             <SkipForward size={16} />

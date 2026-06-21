@@ -80,7 +80,7 @@ export const StartModal: React.FC<StartModalProps> = ({
 
     return (
         <div 
-            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4"
             onClick={(e) => {
                 // 바깥쪽 클릭 시 닫기 (로딩 중이 아닐 때만)
                 if (e.target === e.currentTarget && !isLoading) {
@@ -88,11 +88,11 @@ export const StartModal: React.FC<StartModalProps> = ({
                 }
             }}
         >
-            <div className="bg-gray-900 rounded-2xl border border-gray-700 w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="apple-surface rounded-lg w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="p-5 border-b border-gray-700 flex justify-between items-center">
+                <div className="p-5 border-b border-white/10 flex justify-between items-center bg-black/20">
                     <div>
-                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                             <Music size={20} className="text-brand-red" />
                             {t('selectMusic')}
                         </h2>
@@ -100,7 +100,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                        className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                         disabled={isLoading}
                     >
                         <X size={20} />
@@ -108,12 +108,12 @@ export const StartModal: React.FC<StartModalProps> = ({
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-700 bg-gray-800/50">
+                <div className="m-3 mb-0 flex apple-control rounded-lg overflow-hidden">
                     <button
                         onClick={() => setActiveTab('recommend')}
                         className={`flex-1 py-3 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'recommend'
-                                ? 'text-white bg-gray-700/50 border-b-2 border-brand-red'
-                                : 'text-gray-400 hover:text-white'
+                                ? 'text-white bg-brand-red'
+                                : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <TrendingUp size={16} />
@@ -122,8 +122,8 @@ export const StartModal: React.FC<StartModalProps> = ({
                     <button
                         onClick={() => setActiveTab('search')}
                         className={`flex-1 py-3 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'search'
-                                ? 'text-white bg-gray-700/50 border-b-2 border-brand-red'
-                                : 'text-gray-400 hover:text-white'
+                                ? 'text-white bg-brand-red'
+                                : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <Search size={16} />
@@ -133,7 +133,7 @@ export const StartModal: React.FC<StartModalProps> = ({
 
                 {/* Loading Overlay */}
                 {isLoading && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 rounded-2xl">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
                         <div className="text-center">
                             <Loader2 size={40} className="text-brand-red animate-spin mx-auto mb-3" />
                             <p className="text-white font-medium">{t('aiRecommending2')}</p>
@@ -159,10 +159,10 @@ export const StartModal: React.FC<StartModalProps> = ({
                                                 key={pl.id}
                                                 onClick={() => onSelectPlaylist(pl)}
                                                 disabled={isLoading}
-                                                className="w-full flex items-center gap-3 p-3 bg-gradient-to-r from-purple-900/30 to-gray-800 hover:from-purple-800/40 hover:to-gray-700 rounded-xl border border-purple-500/30 hover:border-purple-400 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="w-full flex items-center gap-3 p-3 bg-[#5E5CE6]/12 hover:bg-[#5E5CE6]/20 rounded-lg border border-[#5E5CE6]/25 hover:border-[#5E5CE6]/45 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                <div className="w-10 h-10 bg-purple-600/30 rounded-lg flex items-center justify-center">
-                                                    <FolderOpen size={18} className="text-purple-400" />
+                                                <div className="w-10 h-10 bg-[#5E5CE6]/25 rounded-lg flex items-center justify-center">
+                                                    <FolderOpen size={18} className="text-[#BFBEFF]" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-white font-medium text-sm truncate">{pl.name}</p>
@@ -184,7 +184,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                     <button
                                         onClick={fetchTrendingVideos}
                                         disabled={isTrendingLoading}
-                                        className="text-xs text-gray-500 hover:text-white flex items-center gap-1 transition-colors"
+                                            className="text-xs text-gray-500 hover:text-white flex items-center gap-1 transition-colors"
                                     >
                                         <RefreshCw size={12} className={isTrendingLoading ? 'animate-spin' : ''} />
                                         {t('refresh')}
@@ -202,7 +202,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                                 key={video.id}
                                                 onClick={() => handleSelectSearchResult(video)}
                                                 disabled={isLoading}
-                                                className="w-full flex items-center gap-3 p-2 bg-gray-800/50 hover:bg-gray-700 rounded-xl transition-all text-left group"
+                                                className="w-full flex items-center gap-3 p-2 bg-white/[0.055] hover:bg-white/10 rounded-lg transition-all text-left group"
                                             >
                                                 <span className="text-sm font-bold text-orange-400 w-5">{index + 1}</span>
                                                 <img
@@ -233,7 +233,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                             key={genre.id}
                                             onClick={() => onSelectGenre(genre.id)}
                                             disabled={isLoading}
-                                            className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-xl border border-gray-700 hover:border-brand-red transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="flex items-center gap-3 p-3 bg-white/[0.055] hover:bg-white/10 rounded-lg border border-white/10 hover:border-brand-red/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <span className="text-2xl">{genre.emoji}</span>
                                             <div>
@@ -250,7 +250,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                 <button
                                     onClick={onSelectRanking}
                                     disabled={isLoading}
-                                    className="w-full flex items-center justify-center gap-2 p-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 rounded-xl transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                    className="w-full flex items-center justify-center gap-2 p-4 bg-brand-red hover:bg-[#2997ff] rounded-lg transition-all shadow-[0_16px_40px_rgba(10,132,255,0.25)] disabled:opacity-50 disabled:cursor-not-allowed group"
                                 >
                                     <span className="text-2xl group-hover:scale-110 transition-transform">🏆</span>
                                     <div>
@@ -262,7 +262,7 @@ export const StartModal: React.FC<StartModalProps> = ({
 
                             {/* Help text if no saved playlists */}
                             {savedPlaylists.length === 0 && (
-                                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+                                <div className="apple-control rounded-lg p-4">
                                     <p className="text-gray-400 text-sm text-center">
                                         {t('savePlaylistHint')}
                                     </p>
@@ -274,7 +274,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                         <div className="space-y-4">
                             {/* Search Input */}
                             <div className="flex gap-2">
-                                <div className="flex-1 flex items-center bg-gray-800 rounded-xl px-4 py-3 border border-gray-600 focus-within:border-brand-red focus-within:ring-1 focus-within:ring-brand-red/30 transition-all">
+                                <div className="flex-1 flex items-center apple-control apple-focus rounded-lg px-4 py-3 transition-all">
                                     <Search size={18} className="text-gray-400 mr-3" />
                                     <input
                                         type="text"
@@ -294,7 +294,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                 <button
                                     onClick={handleSearch}
                                     disabled={isSearching || !searchQuery.trim()}
-                                    className="bg-brand-red hover:bg-red-600 disabled:bg-gray-700 text-white px-5 py-3 rounded-xl transition-colors font-medium flex items-center gap-2"
+                                    className="bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-700 text-white px-5 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
                                 >
                                     {isSearching ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
                                 </button>
@@ -308,7 +308,7 @@ export const StartModal: React.FC<StartModalProps> = ({
                                         <button
                                             key={result.id}
                                             onClick={() => handleSelectSearchResult(result)}
-                                            className="w-full flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-all text-left group"
+                                            className="w-full flex items-center gap-3 p-3 bg-white/[0.055] hover:bg-white/10 rounded-lg transition-all text-left group"
                                         >
                                             <img
                                                 src={result.thumbnail}

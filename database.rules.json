@@ -1,12 +1,31 @@
 {
   "rules": {
     "rooms": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      "$roomId": {
+        ".read": "auth != null && (data.child('createdByUid').val() === auth.uid || root.child('roomMembers').child($roomId).child(auth.uid).exists())",
+        ".write": "auth != null && ((!data.exists() && newData.child('createdByUid').val() === auth.uid) || data.child('createdByUid').val() === auth.uid || root.child('roomMembers').child($roomId).child(auth.uid).exists())"
+      }
+    },
+    "roomMembers": {
+      "$roomId": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('roomMembers').child($roomId).child(auth.uid).exists())",
+          ".write": "auth != null && auth.uid === $uid && root.child('rooms').child($roomId).exists()",
+          ".validate": "!newData.exists() || (newData.hasChildren(['nickname', 'joinedAt']) && newData.child('nickname').isString() && newData.child('joinedAt').isNumber())"
+        }
+      }
+    },
+    "invites": {
+      "$token": {
+        ".read": "auth != null && data.exists() && data.child('expiresAt').val() > now",
+        ".write": "auth != null && !data.exists() && newData.exists() && newData.hasChildren(['roomId', 'createdByUid', 'createdAt', 'expiresAt']) && newData.child('roomId').isString() && newData.child('createdByUid').val() === auth.uid && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() <= now + 86460000 && root.child('roomMembers').child(newData.child('roomId').val()).child(auth.uid).exists()"
+      }
     },
     "voiceChat": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      "$roomId": {
+        ".read": "auth != null && (root.child('rooms').child($roomId).child('createdByUid').val() === auth.uid || root.child('roomMembers').child($roomId).child(auth.uid).exists())",
+        ".write": "auth != null && (root.child('rooms').child($roomId).child('createdByUid').val() === auth.uid || root.child('roomMembers').child($roomId).child(auth.uid).exists())"
+      }
     },
     ".read": false,
     ".write": false

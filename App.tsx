@@ -30,6 +30,32 @@ const INITIAL_VIDEO: Video = {
 const arePlaylistsEqual = (a: Video[], b: Video[]) =>
   a.length === b.length && a.every((video, index) => video.id === b[index]?.id);
 
+type InviteStatus = 'none' | 'checking' | 'ready' | 'invalid';
+
+const getInviteTokenFromUrl = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  return url.searchParams.get('invite');
+};
+
+const removeInviteTokenFromUrl = () => {
+  if (typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('invite')) return;
+
+  url.searchParams.delete('invite');
+  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+};
+
+const buildInviteLink = (token: string): string => {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('invite', token);
+  return url.toString();
+};
+
 const App: React.FC = () => {
   // --- i18n ---
   const { language, setLanguage, t } = useI18n();
@@ -63,6 +89,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(TabType.CHAT);
 
   const [showCopiedToast, setShowCopiedToast] = useState(false);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => getInviteTokenFromUrl());
+  const [inviteStatus, setInviteStatus] = useState<InviteStatus>(pendingInviteToken ? 'checking' : 'none');
 
   // Shuffle & Repeat State
   const [isShuffleOn, setIsShuffleOn] = useState(false);
@@ -103,9 +131,42 @@ const App: React.FC = () => {
     currentRoomRef.current = currentRoom;
   }, [currentRoom]);
 
+  useEffect(() => {
+    removeInviteTokenFromUrl();
+  }, []);
+
+  useEffect(() => {
+    if (!pendingInviteToken) {
+      setInviteStatus('none');
+      return;
+    }
+
+    let didCancel = false;
+    setInviteStatus('checking');
+
+    firebaseService.resolveInvite(pendingInviteToken)
+      .then((invite) => {
+        if (!didCancel) {
+          setInviteStatus(invite ? 'ready' : 'invalid');
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to resolve invite:', error);
+        if (!didCancel) {
+          setInviteStatus('invalid');
+        }
+      });
+
+    return () => {
+      didCancel = true;
+    };
+  }, [pendingInviteToken]);
+
   // --- Session Restore on Page Load ---
   useEffect(() => {
     const restoreSession = async () => {
+      if (pendingInviteToken || hasJoined) return;
+
       const savedSession = sessionStorage.getItem('tubePartySession');
       if (!savedSession) return;
 
@@ -113,7 +174,7 @@ const App: React.FC = () => {
         const { roomId, nickname, userId } = JSON.parse(savedSession);
         if (!roomId || !nickname) return;
 
-        const room = await firebaseService.getRoom(roomId);
+        const room = await firebaseService.joinRoomByCode(roomId, nickname);
         if (!room) {
           // Room no longer exists, clear session
           sessionStorage.removeItem('tubePartySession');
@@ -133,7 +194,7 @@ const App: React.FC = () => {
         setHasJoined(true);
 
         // Re-register user in Firebase (in case they disconnected)
-        await firebaseService.addUserToRoom(roomId, { id: restoredUser.id, name: restoredUser.name });
+        await firebaseService.addUserToRoom(room.id, { id: restoredUser.id, name: restoredUser.name });
 
         // Load room data
         if (room.currentVideo) {
@@ -157,7 +218,7 @@ const App: React.FC = () => {
     };
 
     restoreSession();
-  }, []);
+  }, [hasJoined, pendingInviteToken]);
 
   // --- Sync Logic (Local Tabs) ---
   useEffect(() => {
@@ -412,7 +473,7 @@ const App: React.FC = () => {
 
   const handleJoinRoom = async (nickname: string, roomCode: string) => {
     try {
-      const room = await firebaseService.getRoom(roomCode.toUpperCase());
+      const room = await firebaseService.joinRoomByCode(roomCode.toUpperCase(), nickname);
       if (!room) {
         alert(t('roomNotExist'));
         return;
@@ -449,6 +510,54 @@ const App: React.FC = () => {
       }]);
     } catch (error) {
       console.error('Failed to join room:', error);
+      alert(t('roomJoinFailed'));
+    }
+  };
+
+  const handleJoinInvite = async (nickname: string) => {
+    if (!pendingInviteToken) return;
+
+    try {
+      const room = await firebaseService.joinRoomByInvite(pendingInviteToken, nickname);
+      if (!room) {
+        setInviteStatus('invalid');
+        alert(t('inviteInvalid'));
+        return;
+      }
+
+      setCurrentRoom(room);
+
+      const newUser: User = {
+        id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: nickname,
+        avatar: '',
+        isAi: false
+      };
+      setCurrentUser(newUser);
+      setUsers(prev => [...prev, newUser]);
+      setHasJoined(true);
+      setPendingInviteToken(null);
+      setInviteStatus('none');
+
+      // Register user in Firebase
+      await firebaseService.addUserToRoom(room.id, { id: newUser.id, name: newUser.name });
+
+      // Save session to sessionStorage for F5 restore
+      sessionStorage.setItem('tubePartySession', JSON.stringify({
+        roomId: room.id,
+        nickname: nickname,
+        userId: newUser.id
+      }));
+
+      // Welcome message
+      setMessages(prev => [...prev, {
+        id: `joined-invite-${Date.now()}`,
+        userId: 'ai-1',
+        text: t('userJoined', { name: nickname }),
+        timestamp: Date.now()
+      }]);
+    } catch (error) {
+      console.error('Failed to join room by invite:', error);
       alert(t('roomJoinFailed'));
     }
   };
@@ -683,11 +792,17 @@ const App: React.FC = () => {
     setIsGenerating(false);
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (currentRoom) {
-      navigator.clipboard.writeText(currentRoom.id);
-      setShowCopiedToast(true);
-      setTimeout(() => setShowCopiedToast(false), 2000);
+      try {
+        const invite = await firebaseService.createInvite(currentRoom.id);
+        await navigator.clipboard.writeText(buildInviteLink(invite.token));
+        setShowCopiedToast(true);
+        setTimeout(() => setShowCopiedToast(false), 2000);
+      } catch (error) {
+        console.error('Failed to create invite link:', error);
+        alert(t('inviteCreateFailed'));
+      }
     }
   };
 
@@ -1047,11 +1162,22 @@ const App: React.FC = () => {
   // --- Render ---
 
   if (!hasJoined) {
-    return <Onboarding onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
+    return (
+      <Onboarding
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        onJoinInvite={handleJoinInvite}
+        onCancelInvite={() => {
+          setPendingInviteToken(null);
+          setInviteStatus('none');
+        }}
+        inviteStatus={pendingInviteToken ? inviteStatus : 'none'}
+      />
+    );
   }
 
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col font-sans">
+    <div className="min-h-screen bg-brand-dark flex flex-col font-sans text-brand-text">
       {/* Start Modal */}
       {showStartModal && (
         <StartModal
@@ -1141,18 +1267,18 @@ const App: React.FC = () => {
 
       {/* Toast */}
       {showCopiedToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
-          <Check size={16} /> {t('roomCodeCopied')}
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#30D158] text-black px-4 py-2 rounded-lg shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex items-center gap-2 animate-bounce font-medium">
+          <Check size={16} /> {t('inviteLinkCopied')}
         </div>
       )}
 
       {/* Navbar */}
-      <nav className="h-16 border-b border-brand-gray bg-black/90 backdrop-blur sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between">
+      <nav className="h-16 border-b border-white/10 bg-black/65 backdrop-blur-2xl sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between shadow-[0_1px_0_rgba(255,255,255,0.06)]">
         <div className="flex items-center gap-2">
           <MonitorPlay className="text-brand-red" size={28} />
-          <h1 className="text-xl font-bold tracking-tight text-white hidden md:block">TubeParty <span className="text-brand-red">AI</span></h1>
+          <h1 className="text-xl font-semibold text-white hidden md-force-block">TubeParty <span className="text-brand-red">AI</span></h1>
           {currentRoom && (
-            <span className="ml-2 bg-gray-700 text-gray-300 text-xs font-mono px-2 py-1 rounded hidden md:inline-flex items-center gap-1">
+            <span className="ml-2 apple-control text-gray-300 text-xs font-mono px-2 py-1 rounded-lg hidden md-force-inline-flex items-center gap-1">
               <Copy size={10} />
               {currentRoom.id}
             </span>
@@ -1160,14 +1286,14 @@ const App: React.FC = () => {
         </div>
 
         {/* Search / Link Input - Single Row */}
-        <div className="hidden md:flex items-center relative mx-4 md-force-flex">
+        <div className="hidden md-force-flex items-center relative mx-4">
           {/* Toggle Buttons */}
           <div className="flex mr-2">
             <button
               onClick={() => { setInputMode('search'); setSearchResults([]); }}
               className={`px-3 py-2 text-xs rounded-l-lg transition-colors border ${inputMode === 'search'
                 ? 'bg-brand-red text-white border-brand-red'
-                : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
+                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
                 }`}
             >
               <Search size={14} className="inline" />
@@ -1176,7 +1302,7 @@ const App: React.FC = () => {
               onClick={() => { setInputMode('link'); setSearchResults([]); }}
               className={`px-3 py-2 text-xs rounded-r-lg transition-colors border-t border-r border-b ${inputMode === 'link'
                 ? 'bg-brand-red text-white border-brand-red'
-                : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-white'
+                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
                 }`}
             >
               <LinkIcon size={14} className="inline" />
@@ -1184,7 +1310,7 @@ const App: React.FC = () => {
           </div>
 
           {/* Input Box */}
-          <div className="flex items-center bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 w-[320px]">
+          <div className="flex items-center apple-control apple-focus rounded-lg px-3 py-2 w-[320px]">
             {inputMode === 'search' ? (
               <>
                 <input
@@ -1203,7 +1329,7 @@ const App: React.FC = () => {
                 <button
                   onClick={handleInlineSearch}
                   disabled={isSearching}
-                  className="bg-brand-red hover:bg-red-700 disabled:bg-gray-600 text-white px-2 py-1 rounded text-xs transition-colors"
+                  className="bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-600 text-white px-2 py-1 rounded text-xs transition-colors"
                 >
                   {isSearching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
                 </button>
@@ -1218,7 +1344,7 @@ const App: React.FC = () => {
                   onChange={(e) => setUrlInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddVideo()}
                 />
-                <button onClick={handleAddVideo} className="hover:bg-gray-700 p-1 rounded transition-colors">
+                <button onClick={handleAddVideo} className="hover:bg-white/10 p-1 rounded transition-colors">
                   <Plus size={16} className="text-brand-red" />
                 </button>
               </>
@@ -1227,13 +1353,13 @@ const App: React.FC = () => {
 
           {/* Search Results Dropdown */}
           {searchResults.length > 0 && inputMode === 'search' && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 mt-2 apple-surface-strong rounded-lg z-50 max-h-80 overflow-y-auto">
               {/* 닫기 버튼 */}
-              <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center">
+              <div className="sticky top-0 bg-[#1C1C1E]/95 border-b border-white/10 p-2 flex justify-between items-center backdrop-blur-xl">
                 <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
                 <button
                   onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"
+                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10"
                 >
                   <X size={16} />
                 </button>
@@ -1242,7 +1368,7 @@ const App: React.FC = () => {
                 <button
                   key={result.id}
                   onClick={() => handleSelectSearchResult(result)}
-                  className="w-full flex items-center gap-3 p-2 hover:bg-gray-800 transition-colors text-left"
+                  className="w-full flex items-center gap-3 p-2 hover:bg-white/10 transition-colors text-left"
                 >
                   <img src={result.thumbnail} alt={result.title} className="w-16 h-10 object-cover rounded" />
                   <div className="flex-1 min-w-0">
@@ -1261,7 +1387,7 @@ const App: React.FC = () => {
           <div className="relative">
             <button
               onClick={() => setShowLanguageMenu(!showLanguageMenu)}
-              className="flex items-center gap-1 bg-gray-700 hover:bg-gray-600 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-gray-600"
+              className="flex items-center gap-1 apple-control text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
               title="Language"
             >
               <Globe size={14} />
@@ -1271,7 +1397,7 @@ const App: React.FC = () => {
             {showLanguageMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowLanguageMenu(false)} />
-                <div className="absolute top-full right-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[140px] z-50">
+                <div className="absolute top-full right-0 mt-2 apple-surface-strong rounded-lg overflow-hidden min-w-[140px] z-50">
                   {languageOptions.map((lang) => (
                     <button
                       key={lang.code}
@@ -1281,7 +1407,7 @@ const App: React.FC = () => {
                       }}
                       className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${language === lang.code
                         ? 'bg-brand-red text-white'
-                        : 'text-gray-300 hover:bg-gray-700'
+                        : 'text-gray-300 hover:bg-white/10'
                         }`}
                     >
                       <span>{lang.flag}</span>
@@ -1296,7 +1422,7 @@ const App: React.FC = () => {
           {/* Playlist Browser Button */}
           <button
             onClick={() => setShowPlaylistBrowser(true)}
-            className="flex items-center gap-1 sm:gap-2 bg-purple-600 hover:bg-purple-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
+            className="flex items-center gap-1 sm:gap-2 bg-[#5E5CE6] hover:bg-[#7D7AFF] text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
             title={t('playlist')}
           >
             <ListMusic size={16} />
@@ -1306,9 +1432,9 @@ const App: React.FC = () => {
           {/* Sync Toggle Button */}
           <button
             onClick={handleToggleSync}
-            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border ${isSyncEnabled
-              ? 'bg-green-600/30 text-green-400 border-green-600/50 hover:bg-green-600/50'
-              : 'bg-gray-700 text-gray-400 border-gray-600 hover:bg-gray-600'
+            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors border ${isSyncEnabled
+              ? 'bg-[#30D158]/15 text-[#30D158] border-[#30D158]/30 hover:bg-[#30D158]/22'
+              : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
               }`}
             title={isSyncEnabled ? t('sync') : t('individualPlay')}
           >
@@ -1319,7 +1445,7 @@ const App: React.FC = () => {
           {/* Invite Button */}
           <button
             onClick={handleShare}
-            className="flex items-center gap-1 sm:gap-2 bg-brand-gray hover:bg-gray-700 text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-gray-600"
+            className="flex items-center gap-1 sm:gap-2 apple-control text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
             title={t('invite')}
           >
             <Share2 size={16} />
@@ -1361,32 +1487,25 @@ const App: React.FC = () => {
               setPlaylist([]);
               setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
             }}
-            className="flex items-center gap-1 sm:gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-2 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors border border-red-600/30"
+            className="flex items-center gap-1 sm:gap-2 bg-[#FF453A]/12 hover:bg-[#FF453A] text-[#FF453A] hover:text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors border border-[#FF453A]/25"
             title={t('leave')}
           >
             <LogOut size={14} />
             <span className="hidden sm:inline">{t('leave')}</span>
           </button>
 
-          {/* Mobile Tab Toggle */}
-          <button
-            className="md:hidden text-white p-2 bg-gray-700 rounded-lg"
-            onClick={() => setActiveTab(activeTab === TabType.CHAT ? TabType.PLAYLIST : TabType.CHAT)}
-          >
-            {activeTab === TabType.CHAT ? <ListVideo size={18} /> : <MessageSquare size={18} />}
-          </button>
         </div>
       </nav>
 
       {/* Mobile Input */}
-      <div className="md:hidden p-3 bg-brand-gray/20 relative md-force-hidden">
+      <div className="md:hidden p-3 bg-black/45 border-b border-white/10 backdrop-blur-xl relative md-force-hidden">
         {/* Mobile Tab Buttons */}
         <div className="flex mb-2 gap-2">
           <button
             onClick={() => { setInputMode('search'); setSearchResults([]); }}
             className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'search'
               ? 'bg-brand-red text-white'
-              : 'bg-gray-800 text-gray-400'
+              : 'bg-white/5 text-gray-400'
               }`}
           >
             <Search size={14} />{t('searchMobile')}
@@ -1395,7 +1514,7 @@ const App: React.FC = () => {
             onClick={() => { setInputMode('link'); setSearchResults([]); }}
             className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'link'
               ? 'bg-brand-red text-white'
-              : 'bg-gray-800 text-gray-400'
+              : 'bg-white/5 text-gray-400'
               }`}
           >
             <LinkIcon size={14} />{t('linkMobile')}
@@ -1403,7 +1522,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Mobile Input Box */}
-        <div className="flex items-center bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+        <div className="flex items-center apple-control apple-focus rounded-lg px-3 py-2">
           {inputMode === 'search' ? (
             <>
               <input
@@ -1440,13 +1559,13 @@ const App: React.FC = () => {
 
         {/* Mobile Search Results */}
         {searchResults.length > 0 && inputMode === 'search' && (
-          <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg max-h-60 overflow-y-auto">
+          <div className="mt-2 apple-surface-strong rounded-lg max-h-60 overflow-y-auto">
             {/* 닫기 버튼 */}
-            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-2 flex justify-between items-center">
+            <div className="sticky top-0 bg-[#1C1C1E]/95 border-b border-white/10 p-2 flex justify-between items-center backdrop-blur-xl">
               <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
               <button
                 onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"
+                className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10"
               >
                 <X size={16} />
               </button>
@@ -1455,7 +1574,7 @@ const App: React.FC = () => {
               <button
                 key={result.id}
                 onClick={() => handleSelectSearchResult(result)}
-                className="w-full flex items-center gap-3 p-2 hover:bg-gray-800 transition-colors text-left border-b border-gray-800 last:border-0"
+                className="w-full flex items-center gap-3 p-2 hover:bg-white/10 transition-colors text-left border-b border-white/5 last:border-0"
               >
                 <img src={result.thumbnail} alt={result.title} className="w-14 h-9 object-cover rounded" />
                 <div className="flex-1 min-w-0">
@@ -1471,7 +1590,7 @@ const App: React.FC = () => {
       {/* Main Layout */}
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Video + Playlist */}
-        <section className={`lg:col-span-8 flex-col gap-4 ${activeTab === TabType.CHAT ? 'hidden' : 'flex'} lg-force-flex`}>
+        <section className="lg:col-span-8 flex flex-col gap-4 lg-force-flex">
           <VideoPlayer
             videoId={currentVideo.id}
             onVideoEnd={handleVideoEnd}
@@ -1499,25 +1618,41 @@ const App: React.FC = () => {
             syncEnabled={isSyncEnabled}
           />
 
-          <div className="bg-brand-gray/30 p-4 rounded-lg border border-brand-gray flex justify-between items-start">
+          <div className="apple-surface p-4 rounded-lg flex justify-between items-start">
             <div>
-              <h2 className="text-xl font-bold text-white mb-1 line-clamp-1">{currentVideo.title}</h2>
+              <h2 className="text-xl font-semibold text-white mb-1 line-clamp-1">{currentVideo.title}</h2>
               <p className="text-gray-400 text-sm">{currentVideo.channelTitle}</p>
             </div>
           </div>
 
-          {/* Playlist - Always visible on Desktop, toggled on Mobile via parent section visibility logic above if we want to hide video too? 
-              Actually, usually video stays, only playlist/chat toggles. 
-              Let's refine: Video always shows? 
-              If user wants to chat while watching video on mobile... 
-              The current structure splits Video+Playlist vs Chat.
-              Let's keep Video always visible on mobile at top?
-              But the grid splits them. 
-              Let's try: 
-              - Mobile: Video always top. Below it: Playlist OR Chat.
-              - Desktop: Video+Playlist Left, Chat Right (Sticky).
-          */}
-          <div className="max-h-[400px]">
+          <div className="lg:hidden grid grid-cols-2 gap-1 rounded-lg bg-white/[0.055] p-1 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setActiveTab(TabType.CHAT)}
+              className={`h-10 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                activeTab === TabType.CHAT
+                  ? 'bg-brand-red text-white shadow-[0_8px_24px_rgba(10,132,255,0.25)]'
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <MessageSquare size={15} />
+              {t('liveChat')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab(TabType.PLAYLIST)}
+              className={`h-10 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                activeTab === TabType.PLAYLIST
+                  ? 'bg-brand-red text-white shadow-[0_8px_24px_rgba(10,132,255,0.25)]'
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <ListVideo size={15} />
+              {t('playlist')}
+            </button>
+          </div>
+
+          <div className={`max-h-[400px] ${activeTab === TabType.CHAT ? 'hidden' : 'block'} lg:block`}>
             <Playlist
               videos={playlist}
               currentVideoId={currentVideo.id}
@@ -1539,20 +1674,8 @@ const App: React.FC = () => {
           </div>
         </section>
 
-        {/* On mobile, if we want to show chat, we must hide the left section? 
-            Or maybe better: Move VideoPlayer OUT of the grid so it's always top?
-            That's a larger refactor.
-            For now, let's just make the simple fix:
-            On mobile:
-            - If CHAT tab: Hide specific parts of left column? No, grid column hides entire section.
-            
-            Let's stick to the user's likely issue: Desktop layout "strange".
-            I'll implement sticky on right col.
-            And basic visibility toggle.
-        */}
-
         {/* Right: Chat Only */}
-        <section className={`lg:col-span-4 h-[500px] lg:h-[calc(100vh-100px)] flex-col lg:sticky lg:top-20 ${activeTab === TabType.PLAYLIST ? 'hidden' : 'flex'} lg-force-flex`}>
+        <section className={`lg:col-span-4 h-[55vh] min-h-[360px] max-h-[560px] lg:max-h-none lg:h-[calc(100vh-100px)] flex-col lg:sticky lg:top-20 ${activeTab === TabType.PLAYLIST ? 'hidden' : 'flex'} lg-force-flex`}>
           <ChatRoom
             messages={messages}
             users={users}

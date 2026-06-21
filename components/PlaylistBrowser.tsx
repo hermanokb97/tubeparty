@@ -220,7 +220,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
 
     return (
         <div 
-            className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/75 backdrop-blur-xl z-50 flex items-center justify-center p-4"
             onClick={(e) => {
                 // 바깥쪽 클릭 시 닫기
                 if (e.target === e.currentTarget) {
@@ -228,12 +228,12 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                 }
             }}
         >
-            <div className="bg-gradient-to-b from-gray-900 to-brand-dark rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-700/50 shadow-2xl overflow-hidden">
+            <div className="apple-surface rounded-lg w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="p-5 border-b border-gray-700/50 flex items-center justify-between bg-gradient-to-r from-purple-900/30 to-brand-red/20">
+                <div className="p-5 border-b border-white/10 flex items-center justify-between bg-black/20">
                     <div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <div className="p-2 bg-purple-600 rounded-lg">
+                        <h2 className="text-2xl font-semibold text-white flex items-center gap-3">
+                            <div className="p-2 bg-[#5E5CE6] rounded-lg">
                                 <ListMusic size={24} />
                             </div>
                             재생목록 탐색
@@ -242,19 +242,19 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                     >
                         <X size={24} className="text-gray-400" />
                     </button>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-700/50 bg-gray-900/50">
+                <div className="m-4 mb-0 flex apple-control rounded-lg overflow-hidden">
                     <button
                         onClick={() => setActiveTab('charts')}
                         className={`flex-1 py-4 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'charts'
-                            ? 'text-white bg-gradient-to-r from-orange-600/20 to-transparent border-b-2 border-orange-500'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                            ? 'text-white bg-brand-red'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <TrendingUp size={18} />
@@ -263,8 +263,8 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     <button
                         onClick={() => setActiveTab('curated')}
                         className={`flex-1 py-4 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'curated'
-                            ? 'text-white bg-gradient-to-r from-purple-600/20 to-transparent border-b-2 border-purple-500'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                            ? 'text-white bg-brand-red'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <Sparkles size={18} />
@@ -273,8 +273,8 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     <button
                         onClick={() => setActiveTab('search')}
                         className={`flex-1 py-4 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'search'
-                            ? 'text-white bg-gradient-to-r from-brand-red/20 to-transparent border-b-2 border-brand-red'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                            ? 'text-white bg-brand-red'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <ListMusic size={18} />
@@ -283,8 +283,8 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                     <button
                         onClick={() => setActiveTab('songSearch')}
                         className={`flex-1 py-4 text-sm font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'songSearch'
-                            ? 'text-white bg-gradient-to-r from-green-600/20 to-transparent border-b-2 border-green-500'
-                            : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                            ? 'text-white bg-brand-red'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <Search size={18} />
@@ -304,7 +304,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                         onClick={() => setSelectedGenre(genre)}
                                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${selectedGenre.id === genre.id
                                             ? `bg-gradient-to-r ${genre.color} text-white shadow-lg`
-                                            : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                                            : 'bg-white/[0.07] text-gray-300 hover:bg-white/10'
                                             }`}
                                     >
                                         <span>{genre.emoji}</span>
@@ -326,7 +326,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                     <button
                                         onClick={fetchGenreVideos}
                                         disabled={isGenreLoading}
-                                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 flex items-center gap-2 transition-colors"
+                                        className="px-3 py-2 apple-control rounded-lg text-sm text-gray-300 flex items-center gap-2 transition-colors"
                                     >
                                         <RefreshCw size={14} className={isGenreLoading ? 'animate-spin' : ''} />
                                         새로고침
@@ -345,7 +345,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
 
                             {/* Selection Controls for Genre Videos */}
                             {genreVideos.length > 0 && (
-                                <div className="flex items-center justify-between bg-gray-800/50 rounded-xl px-4 py-3">
+                                <div className="flex items-center justify-between apple-control rounded-lg px-4 py-3">
                                     <div className="flex items-center gap-3">
                                         <span className="text-sm text-gray-400">
                                             {selectedGenreVideos.size > 0 ? (
@@ -356,13 +356,13 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                         </span>
                                         <button
                                             onClick={selectAllGenreVideos}
-                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/10 hover:bg-white/15"
                                         >
                                             전체 선택
                                         </button>
                                         <button
                                             onClick={deselectAllGenreVideos}
-                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/10 hover:bg-white/15"
                                         >
                                             선택 해제
                                         </button>
@@ -390,15 +390,15 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                         <button
                                             key={video.id}
                                             onClick={() => toggleGenreVideoSelection(video.id)}
-                                            className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group ${selectedGenreVideos.has(video.id)
+                                            className={`flex items-center gap-3 p-3 rounded-lg transition-all text-left group ${selectedGenreVideos.has(video.id)
                                                 ? 'bg-orange-600/20 border-2 border-orange-500'
-                                                : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
+                                                : 'bg-white/[0.055] hover:bg-white/10 border-2 border-transparent'
                                                 }`}
                                         >
                                             {/* Checkbox */}
                                             <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${selectedGenreVideos.has(video.id)
                                                 ? 'bg-orange-500 text-white'
-                                                : 'bg-gray-700 border border-gray-600'
+                                                : 'bg-white/10 border border-white/15'
                                                 }`}>
                                                 {selectedGenreVideos.has(video.id) && (
                                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -445,7 +445,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                                 key={playlist.id}
                                                 onClick={() => handleSelectPlaylist(playlist.id, playlist.title)}
                                                 disabled={loadingPlaylistId === playlist.id}
-                                                className="group relative rounded-xl overflow-hidden bg-gray-800/50 hover:bg-gray-700/70 transition-all hover:scale-105 hover:shadow-xl hover:shadow-purple-500/10"
+                                                className="group relative rounded-lg overflow-hidden bg-white/[0.055] hover:bg-white/10 transition-all hover:shadow-xl hover:shadow-black/20"
                                             >
                                                 {/* Thumbnail */}
                                                 <div className="aspect-video relative">
@@ -461,7 +461,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                                         {loadingPlaylistId === playlist.id ? (
                                                             <Loader2 size={40} className="text-white animate-spin" />
                                                         ) : (
-                                                            <div className="w-14 h-14 rounded-full bg-purple-600 flex items-center justify-center shadow-lg">
+                                                            <div className="w-14 h-14 rounded-lg bg-[#5E5CE6] flex items-center justify-center shadow-lg">
                                                                 <Plus size={28} className="text-white" />
                                                             </div>
                                                         )}
@@ -487,7 +487,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                         <div className="space-y-5">
                             {/* Search Input */}
                             <div className="flex items-center gap-3">
-                                <div className="flex-1 flex items-center bg-gray-800/80 rounded-xl px-4 py-3 border border-gray-600 focus-within:border-brand-red focus-within:ring-2 focus-within:ring-brand-red/20 transition-all">
+                                <div className="flex-1 flex items-center apple-control apple-focus rounded-lg px-4 py-3 transition-all">
                                     <Search size={20} className="text-gray-400 mr-3" />
                                     <input
                                         type="text"
@@ -507,7 +507,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 <button
                                     onClick={handleSearch}
                                     disabled={isLoading}
-                                    className="bg-brand-red hover:bg-red-600 disabled:bg-gray-600 text-white px-6 py-3 rounded-xl transition-colors font-medium flex items-center gap-2"
+                                    className="bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
                                 >
                                     {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Search size={20} />}
                                     검색
@@ -522,7 +522,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                             key={playlist.id}
                                             onClick={() => handleSelectPlaylist(playlist.id, playlist.title)}
                                             disabled={loadingPlaylistId === playlist.id}
-                                            className="flex items-center gap-4 p-4 rounded-xl bg-gray-800/50 hover:bg-gray-700/70 transition-all text-left group hover:scale-[1.02]"
+                                            className="flex items-center gap-4 p-4 rounded-lg bg-white/[0.055] hover:bg-white/10 transition-all text-left group"
                                         >
                                             <div className="relative flex-shrink-0">
                                                 <img
@@ -551,7 +551,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                                    <div className="w-24 h-24 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
+                                    <div className="w-24 h-24 rounded-lg bg-white/10 flex items-center justify-center mb-4">
                                         <ListMusic size={48} className="opacity-50" />
                                     </div>
                                     <p className="text-lg">재생목록을 검색하세요</p>
@@ -565,7 +565,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                         <div className="space-y-5">
                             {/* Song Search Input */}
                             <div className="flex items-center gap-3">
-                                <div className="flex-1 flex items-center bg-gray-800/80 rounded-xl px-4 py-3 border border-gray-600 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
+                                <div className="flex-1 flex items-center apple-control apple-focus rounded-lg px-4 py-3 transition-all">
                                     <Search size={20} className="text-gray-400 mr-3" />
                                     <input
                                         type="text"
@@ -585,7 +585,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 <button
                                     onClick={handleSongSearch}
                                     disabled={isSongSearchLoading}
-                                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white px-6 py-3 rounded-xl transition-colors font-medium flex items-center gap-2"
+                                    className="bg-[#30D158] hover:bg-[#32D74B] disabled:bg-gray-600 text-black px-6 py-3 rounded-lg transition-colors font-medium flex items-center gap-2"
                                 >
                                     {isSongSearchLoading ? <Loader2 size={20} className="animate-spin" /> : <Search size={20} />}
                                     검색
@@ -594,7 +594,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
 
                             {/* Selection Controls */}
                             {songSearchResults.length > 0 && (
-                                <div className="flex items-center justify-between bg-gray-800/50 rounded-xl px-4 py-3">
+                                <div className="flex items-center justify-between apple-control rounded-lg px-4 py-3">
                                     <div className="flex items-center gap-3">
                                         <span className="text-sm text-gray-400">
                                             {selectedSongs.size > 0 ? (
@@ -605,13 +605,13 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                         </span>
                                         <button
                                             onClick={selectAllSongs}
-                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/10 hover:bg-white/15"
                                         >
                                             전체 선택
                                         </button>
                                         <button
                                             onClick={deselectAllSongs}
-                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-700"
+                                            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-white/10 hover:bg-white/15"
                                         >
                                             선택 해제
                                         </button>
@@ -639,15 +639,15 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                         <button
                                             key={video.id}
                                             onClick={() => toggleSongSelection(video.id)}
-                                            className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group ${selectedSongs.has(video.id)
+                                            className={`flex items-center gap-3 p-3 rounded-lg transition-all text-left group ${selectedSongs.has(video.id)
                                                 ? 'bg-green-600/20 border-2 border-green-500'
-                                                : 'bg-gray-800/50 hover:bg-gray-700 border-2 border-transparent'
+                                                : 'bg-white/[0.055] hover:bg-white/10 border-2 border-transparent'
                                                 }`}
                                         >
                                             {/* Checkbox */}
                                             <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${selectedSongs.has(video.id)
                                                 ? 'bg-green-500 text-white'
-                                                : 'bg-gray-700 border border-gray-600'
+                                                : 'bg-white/10 border border-white/15'
                                                 }`}>
                                                 {selectedSongs.has(video.id) && (
                                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -672,7 +672,7 @@ export const PlaylistBrowser: React.FC<PlaylistBrowserProps> = ({
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                                    <div className="w-24 h-24 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
+                                    <div className="w-24 h-24 rounded-lg bg-white/10 flex items-center justify-center mb-4">
                                         <Music size={48} className="opacity-50" />
                                     </div>
                                     <p className="text-lg">노래를 검색하세요</p>

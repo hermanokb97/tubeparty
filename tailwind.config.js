@@ -9,10 +9,21 @@ export default {
         extend: {
             colors: {
                 brand: {
-                    dark: '#0f0f0f',
-                    red: '#FF0000',
-                    gray: '#333333',
+                    dark: '#050505',
+                    red: '#0A84FF',
+                    gray: '#1C1C1E',
+                    text: '#F5F5F7',
                 }
+            },
+            fontFamily: {
+                sans: [
+                    '-apple-system',
+                    'BlinkMacSystemFont',
+                    '"SF Pro Display"',
+                    '"SF Pro Text"',
+                    '"Segoe UI"',
+                    'sans-serif',
+                ],
             },
         },
     },

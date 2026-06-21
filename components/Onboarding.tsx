@@ -51,12 +51,22 @@ const clearSavedCredentials = () => {
 interface OnboardingProps {
   onCreateRoom: (nickname: string, apiKey: string) => void;
   onJoinRoom: (nickname: string, roomCode: string) => void;
+  onJoinInvite?: (nickname: string) => void;
+  onCancelInvite?: () => void;
+  inviteStatus?: 'none' | 'checking' | 'ready' | 'invalid';
 }
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom }) => {
+export const Onboarding: React.FC<OnboardingProps> = ({
+  onCreateRoom,
+  onJoinRoom,
+  onJoinInvite,
+  onCancelInvite,
+  inviteStatus = 'none',
+}) => {
   const { language, setLanguage, t } = useI18n();
-  
-  const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
+  const isInviteMode = inviteStatus !== 'none';
+
+  const [mode, setMode] = useState<'select' | 'create' | 'join'>(isInviteMode ? 'join' : 'select');
   const [nickname, setNickname] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -76,6 +86,12 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
       setSaveInfo(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (isInviteMode) {
+      setMode('join');
+    }
+  }, [isInviteMode]);
 
   // 언어 변경 핸들러
   const handleLanguageChange = (lang: typeof language) => {
@@ -97,6 +113,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isInviteMode) {
+      if (nickname.trim() && inviteStatus === 'ready') {
+        if (saveInfo && nickname.trim()) {
+          const saved = loadSavedCredentials();
+          saveCredentials(nickname.trim(), saved?.apiKey || '');
+        }
+        onJoinInvite?.(nickname.trim());
+      }
+      return;
+    }
+
     if (nickname.trim() && roomCode.trim()) {
       // 닉네임만 저장 (방 참가시에는 API 키가 없을 수 있음)
       if (saveInfo && nickname.trim()) {
@@ -115,20 +142,32 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
     setSaveInfo(true);
   };
 
+  const handleBack = () => {
+    if (isInviteMode) {
+      onCancelInvite?.();
+    }
+    setMode('select');
+  };
+
+  const inviteMessage = inviteStatus === 'checking'
+    ? t('inviteChecking')
+    : inviteStatus === 'ready'
+      ? t('inviteReady')
+      : t('inviteInvalid');
+
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-red/10 rounded-full blur-3xl -z-10 animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl -z-10 animate-pulse delay-75"></div>
+      <div className="absolute inset-x-0 top-0 h-px bg-white/15" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white/[0.035] to-transparent pointer-events-none" />
 
       {/* Language Selector - Top Right */}
       <div className="absolute top-4 right-4 z-50">
         <div className="relative">
           <button
             onClick={() => setShowLanguageMenu(!showLanguageMenu)}
-            className="flex items-center gap-2 bg-gray-800/80 hover:bg-gray-700 text-white px-3 py-2 rounded-lg border border-gray-700 transition-colors"
+            className="flex items-center gap-2 apple-control text-white px-3 py-2 rounded-lg transition-colors"
           >
-            <Globe size={16} className="text-gray-400" />
+            <Globe size={16} className="text-gray-300" />
             <span className="text-sm">
               {languageOptions.find(l => l.code === language)?.flag}{' '}
               {languageOptions.find(l => l.code === language)?.label}
@@ -137,7 +176,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
           {/* Language Dropdown */}
           {showLanguageMenu && (
-            <div className="absolute top-full right-0 mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[140px]">
+            <div className="absolute top-full right-0 mt-2 apple-surface-strong rounded-lg overflow-hidden min-w-[140px]">
               {languageOptions.map((lang) => (
                 <button
                   key={lang.code}
@@ -145,7 +184,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                   className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
                     language === lang.code
                       ? 'bg-brand-red text-white'
-                      : 'text-gray-300 hover:bg-gray-700'
+                      : 'text-gray-300 hover:bg-white/10'
                   }`}
                 >
                   <span>{lang.flag}</span>
@@ -157,12 +196,12 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
         </div>
       </div>
 
-      <div className="max-w-md w-full bg-brand-gray/30 p-8 rounded-2xl border border-brand-gray backdrop-blur-sm shadow-2xl">
+      <div className="max-w-md w-full apple-surface p-8 rounded-lg">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-4 bg-brand-red/10 rounded-full mb-4 ring-1 ring-brand-red/50">
+          <div className="inline-flex items-center justify-center p-4 bg-brand-red/15 rounded-lg mb-4 ring-1 ring-brand-red/35 shadow-[0_12px_35px_rgba(10,132,255,0.18)]">
             <MonitorPlay size={48} className="text-brand-red" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">{t('title')}</h1>
+          <h1 className="text-3xl font-semibold text-white mb-2">{t('title')}</h1>
           <p className="text-gray-400">{t('subtitle')}</p>
         </div>
 
@@ -170,7 +209,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
           <div className="space-y-4">
             {/* 저장된 정보가 있으면 표시 */}
             {hasSavedData && nickname && (
-              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700 mb-2">
+              <div className="apple-control rounded-lg p-4 mb-2">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 text-green-400 text-sm">
                     <Clock size={14} />
@@ -185,7 +224,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                   </button>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-red/20 rounded-full flex items-center justify-center text-brand-red font-bold">
+                  <div className="w-10 h-10 bg-brand-red/15 rounded-lg flex items-center justify-center text-brand-red font-semibold">
                     {nickname.charAt(0).toUpperCase()}
                   </div>
                   <div>
@@ -200,14 +239,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
             <button
               onClick={() => setMode('create')}
-              className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-red/20"
+              className="w-full bg-brand-red hover:bg-[#2997ff] text-white font-semibold py-4 rounded-lg transition-all flex items-center justify-center gap-3 shadow-[0_16px_40px_rgba(10,132,255,0.28)]"
             >
               <Plus size={20} />
               {t('createRoom')}
             </button>
             <button
               onClick={() => setMode('join')}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3"
+              className="w-full apple-control text-white font-semibold py-4 rounded-lg transition-all flex items-center justify-center gap-3"
             >
               <Users size={20} />
               {t('joinRoom')}
@@ -225,7 +264,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 type="text"
                 required
                 maxLength={12}
-                className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500"
+                className="w-full apple-control apple-focus text-white px-4 py-3 rounded-lg transition-all placeholder-gray-500"
                 placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
@@ -233,7 +272,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
             </div>
 
             {/* API 사용 여부 토글 */}
-            <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+            <div className="apple-control rounded-lg p-4">
               <label className="flex items-center gap-3 cursor-pointer group">
                 <div className="relative">
                   <input
@@ -242,7 +281,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                     onChange={(e) => setUseApi(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                  <div className="w-5 h-5 bg-white/10 rounded border border-white/15 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
                     {useApi && <Key size={12} className="text-white" />}
                   </div>
                 </div>
@@ -267,7 +306,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 <input
                   type="password"
                   required={useApi}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-sm"
+                  className="w-full apple-control apple-focus text-white px-4 py-3 rounded-lg transition-all placeholder-gray-500 font-mono text-sm"
                   placeholder={t('apiKeyPlaceholder')}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
@@ -289,7 +328,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                   onChange={(e) => setSaveInfo(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                <div className="w-5 h-5 bg-white/10 rounded border border-white/15 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
                   {saveInfo && <Save size={12} className="text-white" />}
                 </div>
               </div>
@@ -302,7 +341,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
             <button
               type="submit"
-              className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 disabled:opacity-50"
+              className="w-full bg-brand-red hover:bg-[#2997ff] text-white font-semibold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-[0_16px_40px_rgba(10,132,255,0.28)] disabled:opacity-50"
               disabled={!nickname.trim() || (useApi && !apiKey.trim())}
             >
               {t('createButton')}
@@ -321,6 +360,18 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
         {mode === 'join' && (
           <form onSubmit={handleJoinRoom} className="space-y-5">
+            {isInviteMode && (
+              <div className={`rounded-lg p-3 text-sm border ${
+                inviteStatus === 'invalid'
+                  ? 'bg-red-500/10 border-red-500/25 text-red-300'
+                  : inviteStatus === 'ready'
+                    ? 'bg-green-500/10 border-green-500/25 text-green-300'
+                    : 'bg-white/5 border-white/10 text-gray-300'
+              }`}>
+                {inviteMessage}
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 {t('nickname')}
@@ -329,28 +380,30 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                 type="text"
                 required
                 maxLength={12}
-                className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500"
+                className="w-full apple-control apple-focus text-white px-4 py-3 rounded-lg transition-all placeholder-gray-500"
                 placeholder={t('nicknamePlaceholder')}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                <Hash size={14} />
-                {t('roomCode')}
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-brand-red focus:ring-1 focus:ring-brand-red outline-none transition-all placeholder-gray-500 font-mono text-lg tracking-widest uppercase text-center"
-                placeholder={t('roomCodePlaceholder')}
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              />
-            </div>
+            {!isInviteMode && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                  <Hash size={14} />
+                  {t('roomCode')}
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  className="w-full apple-control apple-focus text-white px-4 py-3 rounded-lg transition-all placeholder-gray-500 font-mono text-lg uppercase text-center"
+                  placeholder={t('roomCodePlaceholder')}
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                />
+              </div>
+            )}
 
             {/* 정보 저장 옵션 */}
             <label className="flex items-center gap-3 cursor-pointer group">
@@ -361,7 +414,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
                   onChange={(e) => setSaveInfo(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-5 h-5 bg-gray-700 rounded border border-gray-600 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
+                <div className="w-5 h-5 bg-white/10 rounded border border-white/15 peer-checked:bg-brand-red peer-checked:border-brand-red transition-all flex items-center justify-center">
                   {saveInfo && <Save size={12} className="text-white" />}
                 </div>
               </div>
@@ -374,8 +427,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
             <button
               type="submit"
-              className="w-full bg-brand-red hover:bg-red-700 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-red/20 disabled:opacity-50"
-              disabled={!nickname.trim() || roomCode.length !== 6}
+              className="w-full bg-brand-red hover:bg-[#2997ff] text-white font-semibold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-[0_16px_40px_rgba(10,132,255,0.28)] disabled:opacity-50"
+              disabled={!nickname.trim() || (isInviteMode ? inviteStatus !== 'ready' : roomCode.length !== 6)}
             >
               {t('joinButton')}
               <ArrowRight size={20} />
@@ -383,7 +436,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onCreateRoom, onJoinRoom
 
             <button
               type="button"
-              onClick={() => setMode('select')}
+              onClick={handleBack}
               className="w-full text-gray-400 hover:text-white py-2 transition-colors text-sm"
             >
               {t('back')}

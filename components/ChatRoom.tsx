@@ -43,29 +43,29 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const humanUsers = users.filter(u => !u.isAi);
 
   return (
-    <div className="flex flex-col h-full bg-brand-gray/30 rounded-lg border border-brand-gray overflow-hidden">
+    <div className="flex flex-col h-full apple-surface rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-brand-gray bg-brand-dark/50 flex justify-between items-center">
+      <div className="p-4 border-b border-white/10 bg-black/25 flex justify-between items-center">
         <h3 className="font-semibold text-white">{t('liveChat')}</h3>
         <div className="flex items-center space-x-2 text-xs text-gray-400">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          <span className="w-2 h-2 bg-[#30D158] rounded-full animate-pulse"></span>
           <span>{humanUsers.length}{t('participantsCount')}</span>
         </div>
       </div>
 
       {/* Participants Bar - Always visible */}
-      <div className="px-3 py-2 bg-brand-dark/30 border-b border-brand-gray/50 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+      <div className="px-3 py-2 bg-white/[0.035] border-b border-white/10 flex items-center gap-2 overflow-x-auto scrollbar-hide">
         <span className="text-xs text-gray-500 shrink-0">👥 {t('participants')}</span>
         {humanUsers.length > 0 ? (
           humanUsers.map((user) => (
             <div
               key={user.id}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs shrink-0 ${user.id === currentUser.id
-                  ? 'bg-brand-red/20 text-brand-red border border-brand-red/30'
-                  : 'bg-gray-700/50 text-gray-300 border border-gray-600/30'
+                  ? 'bg-brand-red/15 text-brand-red border border-brand-red/30'
+                  : 'bg-white/[0.07] text-gray-300 border border-white/10'
                 }`}
             >
-              <div className="w-4 h-4 rounded-full bg-gray-600 flex items-center justify-center">
+              <div className="w-4 h-4 rounded bg-white/10 flex items-center justify-center">
                 <UserIcon size={10} />
               </div>
               <span>{user.name}</span>
@@ -89,8 +89,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               <div className={`flex max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
 
                 {/* Avatar */}
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 
-                  ${isAi ? 'bg-gradient-to-tr from-purple-500 to-blue-500' : 'bg-gray-600'}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 
+                  ${isAi ? 'bg-[#5E5CE6]' : 'bg-white/[0.12]'}`}>
                   {isAi ? <Bot size={16} /> : <UserIcon size={16} />}
                 </div>
 
@@ -102,8 +102,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                       ${isMe
                         ? 'bg-brand-red text-white rounded-br-none'
                         : isAi
-                          ? 'bg-gradient-to-r from-gray-700 to-gray-800 border border-gray-600 text-gray-100 rounded-bl-none'
-                          : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                          ? 'bg-[#2C2C2E] border border-white/10 text-gray-100 rounded-bl-none'
+                          : 'bg-white/10 text-gray-100 rounded-bl-none'
                       }`}
                   >
                     {msg.text}
@@ -117,10 +117,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         {isAiTyping && (
           <div className="flex justify-start">
             <div className="flex max-w-[80%] items-end gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-[#5E5CE6] flex items-center justify-center shrink-0">
                 <Bot size={16} />
               </div>
-              <div className="bg-gray-800 px-4 py-3 rounded-2xl rounded-bl-none">
+              <div className="bg-white/10 px-4 py-3 rounded-2xl rounded-bl-none">
                 <div className="flex space-x-1">
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-75"></div>
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
@@ -134,18 +134,18 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 bg-brand-dark/50 border-t border-brand-gray">
+      <form onSubmit={handleSubmit} className="p-3 bg-black/25 border-t border-white/10">
         <div className="relative">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder={t('messagePlaceholder')}
-            className="w-full bg-gray-800 text-white pl-4 pr-12 py-3 rounded-full border border-gray-700 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red transition-all"
+            className="w-full apple-control apple-focus text-white pl-4 pr-12 py-3 rounded-lg transition-all"
           />
           <button
             type="submit"
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-red hover:bg-red-700 rounded-full text-white transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-brand-red hover:bg-[#2997ff] rounded-lg text-white transition-colors"
           >
             <Send size={16} />
           </button>

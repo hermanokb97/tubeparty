@@ -66,25 +66,25 @@ export const YouTubeSearchModal: React.FC<YouTubeSearchModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-gray/95 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-700 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+            <div className="apple-surface rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <div className="p-4 border-b border-white/10 bg-black/20 flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                         <Search size={20} className="text-brand-red" />
                         YouTube 검색
                     </h2>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                     >
                         <X size={20} className="text-gray-400" />
                     </button>
                 </div>
 
                 {/* Search Input */}
-                <div className="p-4 border-b border-gray-700">
-                    <div className="flex items-center bg-gray-800 rounded-xl px-4 py-3 border border-gray-600 focus-within:border-brand-red transition-colors">
+                <div className="p-4 border-b border-white/10">
+                    <div className="flex items-center apple-control apple-focus rounded-lg px-4 py-3 transition-colors">
                         <Search size={18} className="text-gray-400 mr-3" />
                         <input
                             type="text"
@@ -98,7 +98,7 @@ export const YouTubeSearchModal: React.FC<YouTubeSearchModalProps> = ({
                         <button
                             onClick={handleSearch}
                             disabled={isLoading || !query.trim()}
-                            className="ml-3 bg-brand-red hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium"
+                            className="ml-3 bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium"
                         >
                             {isLoading ? (
                                 <Loader2 size={16} className="animate-spin" />
@@ -121,7 +121,7 @@ export const YouTubeSearchModal: React.FC<YouTubeSearchModalProps> = ({
                         results.map((result) => (
                             <div
                                 key={result.id}
-                                className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/50 hover:bg-gray-700/70 transition-colors cursor-pointer group"
+                                className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.055] hover:bg-white/10 transition-colors cursor-pointer group"
                                 onClick={() => handleSelectVideo(result)}
                             >
                                 <div className="relative flex-shrink-0">
@@ -142,7 +142,7 @@ export const YouTubeSearchModal: React.FC<YouTubeSearchModalProps> = ({
                                         {result.channelTitle}
                                     </p>
                                 </div>
-                                <button className="flex-shrink-0 p-2 bg-brand-red/20 hover:bg-brand-red text-brand-red hover:text-white rounded-full transition-colors">
+                                <button className="flex-shrink-0 p-2 bg-brand-red/15 hover:bg-brand-red text-brand-red hover:text-white rounded-lg transition-colors">
                                     <Plus size={18} />
                                 </button>
                             </div>
@@ -165,7 +165,7 @@ export const YouTubeSearchModal: React.FC<YouTubeSearchModalProps> = ({
                 </div>
 
                 {/* Footer hint */}
-                <div className="p-3 border-t border-gray-700 text-center text-xs text-gray-500">
+                <div className="p-3 border-t border-white/10 text-center text-xs text-gray-500">
                     클릭하면 바로 재생됩니다 • AI 추천곡이 재생되지 않을 때 사용하세요
                 </div>
             </div>

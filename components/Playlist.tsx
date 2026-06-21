@@ -61,8 +61,8 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
       style={style}
       className={`flex gap-3 p-2 rounded-lg transition-all group
         ${currentVideoId === video.id
-          ? 'bg-brand-red/20 border border-brand-red/50'
-          : 'hover:bg-white/5 border border-transparent'}`}
+          ? 'bg-brand-red/15 border border-brand-red/40'
+          : 'hover:bg-white/[0.07] border border-transparent'}`}
     >
       {/* Drag Handle */}
       <button
@@ -86,7 +86,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
       {/* Thumbnail - Clickable */}
       <div
         onClick={() => onSelectVideo(video)}
-        className="relative w-20 h-12 bg-gray-800 rounded overflow-hidden flex-shrink-0 cursor-pointer"
+        className="relative w-20 h-12 bg-white/10 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer"
       >
         <img
           src={video.thumbnail}
@@ -95,7 +95,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
         />
         {currentVideoId === video.id && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-            <span className="text-[9px] text-white font-bold bg-brand-red px-1.5 py-0.5 rounded">NOW</span>
+            <span className="text-[9px] text-white font-semibold bg-brand-red px-1.5 py-0.5 rounded">NOW</span>
           </div>
         )}
       </div>
@@ -212,11 +212,11 @@ export const Playlist: React.FC<PlaylistProps> = ({
   const currentIndex = videos.findIndex(v => v.id === currentVideoId);
 
   return (
-    <div className="flex flex-col bg-brand-gray/30 rounded-xl border border-brand-gray overflow-hidden relative">
+    <div className="flex flex-col apple-surface rounded-lg overflow-hidden relative">
       {/* Save Modal */}
       {showSaveModal && (
-        <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-lg p-4 w-full max-w-xs border border-gray-600">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center p-4">
+          <div className="apple-surface-strong rounded-lg p-4 w-full max-w-xs">
             <div className="flex justify-between items-center mb-3">
               <h4 className="text-white font-semibold">{t('savePlaylist')}</h4>
               <button onClick={() => setShowSaveModal(false)} className="text-gray-400 hover:text-white">
@@ -229,13 +229,13 @@ export const Playlist: React.FC<PlaylistProps> = ({
               value={playlistName}
               onChange={(e) => setPlaylistName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-              className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm mb-3 focus:outline-none focus:border-brand-red"
+              className="w-full apple-control apple-focus rounded px-3 py-2 text-white text-sm mb-3"
               autoFocus
             />
             <button
               onClick={handleSave}
               disabled={!playlistName.trim()}
-              className="w-full bg-brand-red hover:bg-red-600 disabled:bg-gray-600 text-white py-2 rounded text-sm transition-colors"
+              className="w-full bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-600 text-white py-2 rounded text-sm transition-colors"
             >
               {t('save')}
             </button>
@@ -245,8 +245,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
 
       {/* Load Modal */}
       {showLoadModal && (
-        <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-lg p-4 w-full max-w-xs border border-gray-600 max-h-[80%] flex flex-col">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center p-4">
+          <div className="apple-surface-strong rounded-lg p-4 w-full max-w-xs max-h-[80%] flex flex-col">
             <div className="flex justify-between items-center mb-3">
               <h4 className="text-white font-semibold">{t('loadPlaylist')}</h4>
               <button onClick={() => setShowLoadModal(false)} className="text-gray-400 hover:text-white">
@@ -260,7 +260,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
                 savedPlaylists.map((pl) => (
                   <div
                     key={pl.id}
-                    className="flex items-center justify-between bg-gray-700 rounded p-2 hover:bg-gray-600 transition-colors"
+                    className="flex items-center justify-between bg-white/10 rounded p-2 hover:bg-white/15 transition-colors"
                   >
                     <button
                       onClick={() => handleLoad(pl)}
@@ -285,14 +285,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
       )}
 
       {/* Header */}
-      <div className="p-3 border-b border-brand-gray bg-gradient-to-r from-brand-dark to-gray-900 flex justify-between items-center">
+      <div className="p-3 border-b border-white/10 bg-black/25 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-red/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-brand-red/15 flex items-center justify-center">
               <Play size={14} className="text-brand-red" fill="currentColor" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-sm">{t('playlistTitle')}</h3>
+              <h3 className="font-semibold text-white text-sm">{t('playlistTitle')}</h3>
               <p className="text-xs text-gray-500">{videos.length} {t('songs')} {currentIndex >= 0 && `• ${currentIndex + 1}${t('nowPlaying')}`}</p>
             </div>
           </div>
@@ -301,7 +301,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
           <button
             onClick={onToggleShuffle}
             className={`p-2 rounded-lg transition-colors ${isShuffleOn
-              ? 'bg-green-600/30 text-green-400'
+              ? 'bg-[#30D158]/15 text-[#30D158]'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
             title={t('randomPlay')}
@@ -311,14 +311,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
           <button
             onClick={onToggleRepeat}
             className={`p-2 rounded-lg transition-colors ${repeatMode !== 'off'
-              ? 'bg-green-600/30 text-green-400'
+              ? 'bg-[#30D158]/15 text-[#30D158]'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
             title={repeatMode === 'off' ? t('repeatOff') : repeatMode === 'all' ? t('repeatAll') : t('repeatOne')}
           >
             <RepeatIcon size={16} />
           </button>
-          <div className="w-px h-5 bg-gray-600 mx-1"></div>
+          <div className="w-px h-5 bg-white/10 mx-1"></div>
           <button
             onClick={() => setShowSaveModal(true)}
             disabled={videos.length === 0}
@@ -338,14 +338,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
       </div>
 
       {/* AI Recommend Button - API 키가 있을 때만 활성화 */}
-      <div className="p-2 border-b border-brand-gray bg-gray-900/50">
+      <div className="p-2 border-b border-white/10 bg-white/[0.035]">
         <button
           onClick={onGenerateRecommendations}
           disabled={isGenerating || !hasApiKey}
           className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all border ${
             hasApiKey 
-              ? 'bg-gradient-to-r from-purple-600/30 to-pink-600/30 hover:from-purple-600/50 hover:to-pink-600/50 text-purple-300 border-purple-500/30 disabled:opacity-50'
-              : 'bg-gray-800/50 text-gray-500 border-gray-700 cursor-not-allowed'
+              ? 'bg-[#5E5CE6]/15 hover:bg-[#5E5CE6]/25 text-[#BFBEFF] border-[#5E5CE6]/30 disabled:opacity-50'
+              : 'bg-white/5 text-gray-500 border-white/10 cursor-not-allowed'
           }`}
           title={!hasApiKey ? 'API 키가 없어 AI 추천을 사용할 수 없습니다' : ''}
         >
@@ -361,7 +361,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
       >
         {videos.length === 0 ? (
           <div className="text-center text-gray-500 py-12 px-4">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-lg bg-white/10 flex items-center justify-center">
               <Music size={32} className="opacity-50" />
             </div>
             <p className="font-medium mb-1">{t('emptyPlaylist')}</p>

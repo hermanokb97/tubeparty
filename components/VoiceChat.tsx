@@ -257,7 +257,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 <button
                     onClick={handleJoin}
                     disabled={isConnecting}
-                    className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-green-600 hover:bg-green-500 disabled:bg-yellow-600 text-white rounded-full text-xs sm:text-sm font-medium transition-all shadow-lg"
+                    className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-[#30D158]/15 hover:bg-[#30D158]/22 disabled:bg-[#FFD60A]/20 text-[#30D158] disabled:text-[#FFD60A] rounded-lg text-xs sm:text-sm font-medium transition-all border border-[#30D158]/25"
                 >
                     {isConnecting ? (
                         <>
@@ -276,10 +276,10 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
     }
 
     return (
-        <div className="flex items-center gap-1 sm:gap-2 bg-gray-800/80 rounded-full px-2 sm:px-3 py-1 sm:py-1.5 border border-gray-700">
+        <div className="flex items-center gap-1 sm:gap-2 apple-control rounded-lg px-2 sm:px-3 py-1 sm:py-1.5">
             {/* Status indicator - hidden on mobile */}
             <div className="hidden sm:flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-green-500'}`} />
+                <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-[#30D158] animate-pulse' : 'bg-[#30D158]'}`} />
                 <span className="text-xs text-gray-400" title={audioStatus}>
                     {remoteUsers.length > 0 ? (
                         <span className="flex items-center gap-1">
@@ -293,17 +293,17 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             </div>
 
             {/* Mobile: Just show green dot */}
-            <span className={`sm:hidden w-2 h-2 rounded-full bg-green-500 ${remoteUsers.length > 0 ? 'animate-pulse' : ''}`} />
+            <span className={`sm:hidden w-2 h-2 rounded-full bg-[#30D158] ${remoteUsers.length > 0 ? 'animate-pulse' : ''}`} />
 
             {/* Divider */}
-            <div className="w-px h-4 sm:h-5 bg-gray-600" />
+            <div className="w-px h-4 sm:h-5 bg-white/10" />
 
             {/* Mute button */}
             <button
                 onClick={handleToggleMute}
                 className={`p-1 sm:p-1.5 rounded-full transition-colors ${isMuted
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                    : 'hover:bg-gray-700 text-gray-300'
+                    ? 'bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25'
+                    : 'hover:bg-white/10 text-gray-300'
                     }`}
                 title={isMuted ? '마이크 켜기' : '마이크 끄기'}
             >
@@ -315,8 +315,8 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 <button
                     onClick={() => setShowVoiceVolumeSlider(!showVoiceVolumeSlider)}
                     className={`p-1 sm:p-1.5 rounded-full transition-colors flex items-center gap-1 ${isDeafened || voiceVolume === 0
-                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                        : 'hover:bg-gray-700 text-gray-300'
+                        ? 'bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25'
+                        : 'hover:bg-white/10 text-gray-300'
                         }`}
                     title="음성 볼륨 조절"
                 >
@@ -326,7 +326,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                 
                 {/* Voice Volume Slider with 10-step buttons */}
                 {showVoiceVolumeSlider && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-900 rounded-lg p-3 flex flex-col items-center gap-3 border border-gray-700 shadow-xl z-50">
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 apple-surface-strong rounded-lg p-3 flex flex-col items-center gap-3 z-50">
                         <span className="text-sm font-medium text-green-400 whitespace-nowrap">🎤 음성 볼륨</span>
                         
                         {/* Slider */}
@@ -337,7 +337,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                             step="10"
                             value={isDeafened ? 0 : voiceVolume}
                             onChange={(e) => handleVoiceVolumeChange(Number(e.target.value))}
-                            className="w-40 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
+                            className="w-40 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#30D158]"
                         />
                         
                         {/* 10-step preset buttons */}
@@ -348,8 +348,8 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                                     onClick={() => handleVoiceVolumeChange(vol)}
                                     className={`w-8 h-7 text-xs rounded transition-all ${
                                         voiceVolume === vol && !isDeafened
-                                            ? 'bg-green-500 text-white font-bold'
-                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                            ? 'bg-[#30D158] text-black font-semibold'
+                                            : 'bg-white/10 text-gray-300 hover:bg-white/15'
                                     }`}
                                 >
                                     {vol}
@@ -365,8 +365,8 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
                                 onClick={handleToggleDeafen}
                                 className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
                                     isDeafened 
-                                        ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50' 
-                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                        ? 'bg-[#FF453A]/25 text-[#FF453A] hover:bg-[#FF453A]/35' 
+                                        : 'bg-white/10 text-gray-300 hover:bg-white/15'
                                 }`}
                             >
                                 {isDeafened ? '음소거 해제' : '음소거'}
@@ -377,12 +377,12 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             </div>
 
             {/* Divider */}
-            <div className="w-px h-4 sm:h-5 bg-gray-600" />
+            <div className="w-px h-4 sm:h-5 bg-white/10" />
 
             {/* Leave button */}
             <button
                 onClick={handleLeave}
-                className="p-1 sm:p-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                className="p-1 sm:p-1.5 rounded bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25 transition-colors"
                 title="음성 나가기"
             >
                 <PhoneOff size={16} />
