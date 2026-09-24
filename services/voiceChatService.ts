@@ -69,6 +69,11 @@ export class VoiceChatService {
     private isMuted = false;
     private isJoined = false;
     private isLeaving = false;
+    private session = 0;
+    private joinInFlight: Promise<void> | null = null;
+    private restartingPeers: Set<string> = new Set();
+    private reconnectAttempts: Map<string, number> = new Map();
+    private candidateListenerCleanups: Map<string, ListenerCleanup> = new Map();
     private listenerCleanups: ListenerCleanup[] = [];
 
     constructor(roomId: string, userId: string, callbacks: VoiceChatCallbacks) {
@@ -96,6 +101,17 @@ export class VoiceChatService {
 
     async join(): Promise<void> {
         if (this.isJoined) return;
+        if (this.joinInFlight) return this.joinInFlight;
+
+        this.joinInFlight = this.joinInternal().finally(() => {
+            this.joinInFlight = null;
+        });
+        return this.joinInFlight;
+    }
+
+    private async joinInternal(): Promise<void> {
+        if (this.isJoined || this.isLeaving) return;
+        const session = this.session;
 
         this.callbacks.onStatusChange?.('Connecting microphone...');
 
@@ -115,10 +131,22 @@ export class VoiceChatService {
         });
         await onDisconnect(userRef).remove();
 
+        if (session !== this.session || this.isLeaving) {
+            await remove(userRef);
+            return;
+        }
+
         this.listenForUsers();
         this.listenForOffers();
         this.listenForAnswers();
         this.listenForIceCandidates();
+
+        if (session !== this.session || this.isLeaving) {
+            this.listenerCleanups.forEach(cleanup => cleanup());
+            this.listenerCleanups = [];
+            await remove(userRef);
+            return;
+        }
 
         this.isJoined = true;
         this.callbacks.onStatusChange?.('Connected - waiting for others');
@@ -126,6 +154,7 @@ export class VoiceChatService {
 
     async leave(): Promise<void> {
         if (this.isLeaving) return;
+        this.session += 1;
         this.isLeaving = true;
 
         this.listenerCleanups.forEach(cleanup => cleanup());
@@ -139,6 +168,9 @@ export class VoiceChatService {
         this.peerConnections.forEach(pc => pc.close());
         this.peerConnections.clear();
         this.pendingCandidates.clear();
+        this.reconnectAttempts.clear();
+        this.restartingPeers.clear();
+        this.candidateListenerCleanups.clear();
 
         try {
             await ensureFirebaseReady();
@@ -226,9 +258,12 @@ export class VoiceChatService {
             if (pc.connectionState === 'connecting') {
                 this.callbacks.onStatusChange?.('Connecting peer...');
             } else if (pc.connectionState === 'connected') {
+                this.reconnectAttempts.delete(remoteUserId);
                 this.callbacks.onStatusChange?.('Voice connected');
-            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                this.handleUserDisconnected(remoteUserId);
+            } else if (pc.connectionState === 'disconnected') {
+                this.callbacks.onStatusChange?.('Voice disconnected, reconnecting...');
+            } else if (pc.connectionState === 'failed') {
+                void this.restartPeer(remoteUserId);
             }
         };
 
@@ -256,7 +291,7 @@ export class VoiceChatService {
         const usersRef = ref(getDb(), `voiceChat/${this.roomId}/users`);
 
         this.addListenerCleanup(onChildAdded(usersRef, async (snapshot) => {
-            const remoteUserId = getSignalingUserId(snapshot.val());
+            const remoteUserId = getSignalingUserId(snapshot.val()) || snapshot.key || undefined;
             if (!remoteUserId || remoteUserId === this.userId || this.peerConnections.has(remoteUserId)) return;
 
             if (this.userId > remoteUserId) {
@@ -265,8 +300,9 @@ export class VoiceChatService {
         }));
 
         this.addListenerCleanup(onChildRemoved(usersRef, (snapshot) => {
-            const remoteUserId = getSignalingUserId(snapshot.val());
-            if (remoteUserId) {
+            const remoteUserId = getSignalingUserId(snapshot.val()) || snapshot.key || undefined;
+            if (remoteUserId && remoteUserId !== this.userId) {
+                this.reconnectAttempts.delete(remoteUserId);
                 this.handleUserDisconnected(remoteUserId);
             }
         }));
@@ -300,7 +336,18 @@ export class VoiceChatService {
         this.addListenerCleanup(onChildAdded(offersRef, async (snapshot) => {
             const data = snapshot.val();
             const remoteUserId = getSignalingUserId(data);
-            if (!remoteUserId || this.peerConnections.has(remoteUserId)) return;
+            if (!remoteUserId) return;
+
+            const existing = this.peerConnections.get(remoteUserId);
+            if (existing) {
+                const dead = existing.connectionState === 'failed'
+                    || existing.connectionState === 'closed'
+                    || existing.connectionState === 'disconnected';
+                if (!dead) return;
+                existing.close();
+                this.peerConnections.delete(remoteUserId);
+                this.pendingCandidates.delete(remoteUserId);
+            }
 
             const pc = this.createPeerConnection(remoteUserId);
 
@@ -337,7 +384,7 @@ export class VoiceChatService {
             if (!remoteUserId) return;
 
             const pc = this.peerConnections.get(remoteUserId);
-            if (!pc || (pc.signalingState !== 'have-local-offer' && pc.signalingState !== 'stable')) return;
+            if (!pc || pc.signalingState !== 'have-local-offer') return;
 
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription({
@@ -357,7 +404,7 @@ export class VoiceChatService {
 
         this.addListenerCleanup(onChildAdded(candidatesRef, (senderSnapshot) => {
             const senderId = senderSnapshot.key;
-            if (!senderId) return;
+            if (!senderId || this.candidateListenerCleanups.has(senderId)) return;
 
             const senderCandidatesRef = ref(getDb(), `voiceChat/${this.roomId}/candidates/${this.userId}/${senderId}`);
             const cleanup = onChildAdded(senderCandidatesRef, async (candidateSnapshot) => {
@@ -380,13 +427,56 @@ export class VoiceChatService {
                 }
             });
 
-            this.addListenerCleanup(cleanup);
+            this.candidateListenerCleanups.set(senderId, cleanup);
+            this.addListenerCleanup(() => {
+                cleanup();
+                this.candidateListenerCleanups.delete(senderId);
+            });
         }));
+    }
+
+    private async restartPeer(remoteUserId: string): Promise<void> {
+        if (this.isLeaving || !this.isJoined || remoteUserId === this.userId) return;
+        if (this.restartingPeers.has(remoteUserId)) return;
+        this.restartingPeers.add(remoteUserId);
+
+        try {
+            const attempts = this.reconnectAttempts.get(remoteUserId) || 0;
+            if (attempts >= 2) {
+                this.handleUserDisconnected(remoteUserId);
+                return;
+            }
+            this.reconnectAttempts.set(remoteUserId, attempts + 1);
+
+            const existing = this.peerConnections.get(remoteUserId);
+            if (existing) {
+                existing.onconnectionstatechange = null;
+                existing.oniceconnectionstatechange = null;
+                existing.close();
+            }
+            this.peerConnections.delete(remoteUserId);
+            this.pendingCandidates.delete(remoteUserId);
+
+            if (this.userId <= remoteUserId) {
+                this.callbacks.onStatusChange?.('Waiting for voice reconnect...');
+                return;
+            }
+
+            await remove(ref(getDb(), `voiceChat/${this.roomId}/offers/${remoteUserId}/${this.userId}`));
+            await this.createOffer(remoteUserId);
+            this.callbacks.onStatusChange?.('Reconnecting voice...');
+        } catch (error) {
+            console.error('[VoiceChat] Failed to restart peer:', error);
+        } finally {
+            this.restartingPeers.delete(remoteUserId);
+        }
     }
 
     private handleUserDisconnected(userId: string): void {
         const pc = this.peerConnections.get(userId);
         if (pc) {
+            pc.onconnectionstatechange = null;
+            pc.oniceconnectionstatechange = null;
             pc.close();
             this.peerConnections.delete(userId);
             this.pendingCandidates.delete(userId);

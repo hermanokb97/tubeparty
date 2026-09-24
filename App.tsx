@@ -12,6 +12,8 @@ import { extractVideoId, getAiChatResponse, getVideoRecommendations } from './se
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
 import * as firebaseService from './services/firebaseService';
+import { isStaleRemoteUpdate } from './services/playbackGuard';
+import { advanceQueue, skipQueue, skipUnplayable } from './services/queueAdvance';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
 import { useI18n, languageOptions, Language, getCurrentLanguageInfo } from './services/i18n';
@@ -59,6 +61,8 @@ const buildInviteLink = (token: string): string => {
 const App: React.FC = () => {
   // --- i18n ---
   const { language, setLanguage, t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
 
   // --- State ---
@@ -121,6 +125,7 @@ const App: React.FC = () => {
   // Playback Sync State (재생 구간 동기화)
   const [playbackSyncState, setPlaybackSyncState] = useState<PlaybackSyncState | null>(null);
   const [isSyncEnabled, setIsSyncEnabled] = useState(true);
+  const [replayToken, setReplayToken] = useState(0);
 
   // 이전 사용자 목록 (입장/퇴장 감지용)
   const prevUsersRef = useRef<Set<string>>(new Set());
@@ -130,6 +135,37 @@ const App: React.FC = () => {
   useEffect(() => {
     currentRoomRef.current = currentRoom;
   }, [currentRoom]);
+
+  const currentVideoRef = useRef(currentVideo);
+  const playlistRef = useRef(playlist);
+  const pendingVideoSyncRef = useRef<{ id: string; at: number } | null>(null);
+  const pendingPlaylistSyncRef = useRef<{ at: number } | null>(null);
+  const lastAppliedCurrentVideoAtRef = useRef<number>(0);
+  const lastAppliedPlaylistAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    const pending = pendingVideoSyncRef.current;
+    if (
+      pending &&
+      Date.now() - pending.at < 8000 &&
+      currentVideo.id !== currentVideoRef.current.id
+    ) {
+      return;
+    }
+    currentVideoRef.current = currentVideo;
+  }, [currentVideo]);
+
+  useEffect(() => {
+    const pending = pendingPlaylistSyncRef.current;
+    if (
+      pending &&
+      Date.now() - pending.at < 8000 &&
+      !arePlaylistsEqual(playlist, playlistRef.current)
+    ) {
+      return;
+    }
+    playlistRef.current = playlist;
+  }, [playlist]);
 
   useEffect(() => {
     removeInviteTokenFromUrl();
@@ -162,6 +198,58 @@ const App: React.FC = () => {
     };
   }, [pendingInviteToken]);
 
+  const publishPlayback = useCallback((video: Video, nextPlaylist: Video[], replayIfSame = true) => {
+    const at = Date.now();
+    const sameVideo = video.id === currentVideoRef.current.id;
+    currentVideoRef.current = video;
+    playlistRef.current = nextPlaylist;
+    pendingVideoSyncRef.current = { id: video.id, at };
+    pendingPlaylistSyncRef.current = { at };
+    if (sameVideo && replayIfSame) {
+      setReplayToken((token) => token + 1);
+    }
+    setCurrentVideo(video);
+    setPlaylist(nextPlaylist);
+
+    const room = currentRoomRef.current;
+    const actorId = currentUserRef.current?.id;
+    if (room && actorId) {
+      void firebaseService.updateCurrentVideo(room.id, video, actorId, at);
+      void firebaseService.updatePlaylist(room.id, nextPlaylist, actorId, at);
+    }
+  }, []);
+
+  const publishPlaylist = useCallback((nextPlaylist: Video[]) => {
+    const at = Date.now();
+    playlistRef.current = nextPlaylist;
+    pendingPlaylistSyncRef.current = { at };
+    setPlaylist(nextPlaylist);
+    const room = currentRoomRef.current;
+    const actorId = currentUserRef.current?.id;
+    if (room && actorId) {
+      void firebaseService.updatePlaylist(room.id, nextPlaylist, actorId, at);
+    }
+  }, []);
+
+  const hydrateRoomPlayback = (room: Room) => {
+    pendingVideoSyncRef.current = null;
+    pendingPlaylistSyncRef.current = null;
+    if (room.currentVideo) {
+      currentVideoRef.current = room.currentVideo;
+      setCurrentVideo(room.currentVideo);
+    }
+    if (room.playlist && room.playlist.length > 0) {
+      playlistRef.current = room.playlist;
+      setPlaylist(room.playlist);
+    } else if (room.currentVideo) {
+      const seeded = [room.currentVideo];
+      playlistRef.current = seeded;
+      setPlaylist(seeded);
+    }
+    lastAppliedCurrentVideoAtRef.current = room.currentVideoUpdatedAt || 0;
+    lastAppliedPlaylistAtRef.current = room.playlistUpdatedAt || 0;
+  };
+
   // --- Session Restore on Page Load ---
   useEffect(() => {
     const restoreSession = async () => {
@@ -181,28 +269,22 @@ const App: React.FC = () => {
           return;
         }
 
-        // Restore the session
-        setCurrentRoom(room);
         const restoredUser: User = {
           id: userId || `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: nickname,
           avatar: '',
           isAi: false
         };
+        currentRoomRef.current = room;
+        currentUserRef.current = restoredUser;
+        hydrateRoomPlayback(room);
+        setCurrentRoom(room);
         setCurrentUser(restoredUser);
         setUsers(prev => [...prev, restoredUser]);
         setHasJoined(true);
 
         // Re-register user in Firebase (in case they disconnected)
         await firebaseService.addUserToRoom(room.id, { id: restoredUser.id, name: restoredUser.name });
-
-        // Load room data
-        if (room.currentVideo) {
-          setCurrentVideo(room.currentVideo);
-        }
-        if (room.playlist && room.playlist.length > 0) {
-          setPlaylist(room.playlist);
-        }
 
         // Reconnected message
         setMessages(prev => [...prev, {
@@ -244,82 +326,99 @@ const App: React.FC = () => {
             return [...prev, action.payload.message];
           });
           break;
-        case 'VIDEO_CHANGE':
-          setCurrentVideo(action.payload.video);
-          setPlaylist(prev => {
-            if (prev.some(v => v.id === action.payload.video.id)) return prev;
-            return [action.payload.video, ...prev];
-          });
+        case 'VIDEO_CHANGE': {
+          const incoming = action.payload.video;
+          const nextPlaylist = playlistRef.current.some(v => v.id === incoming.id)
+            ? playlistRef.current
+            : [incoming, ...playlistRef.current];
+          currentVideoRef.current = incoming;
+          playlistRef.current = nextPlaylist;
+          setCurrentVideo(incoming);
+          setPlaylist(nextPlaylist);
           setMessages(prev => [...prev, {
             id: `sys-vid-${Date.now()}`,
             userId: 'ai-1',
-            text: `${t('videoChanged')} ${action.payload.video.title}`,
+            text: `${t('videoChanged')} ${incoming.title}`,
             timestamp: Date.now()
           }]);
           break;
+        }
       }
     });
 
     return () => unsubscribe();
   }, [hasJoined, users]);
 
-  // currentVideo를 ref로 추적하여 stale closure 방지
-  const currentVideoRef = useRef(currentVideo);
-  useEffect(() => {
-    currentVideoRef.current = currentVideo;
-  }, [currentVideo]);
-
-  // playlist를 ref로 추적하여 stale closure 방지
-  const playlistRef = useRef(playlist);
-  useEffect(() => {
-    playlistRef.current = playlist;
-  }, [playlist]);
-
-  // Firebase update metadata tracking
-  const lastAppliedCurrentVideoAtRef = useRef<number>(0);
-  const lastAppliedPlaylistAtRef = useRef<number>(0);
-
   // --- Firebase Real-time Sync ---
   useEffect(() => {
     if (!hasJoined || !currentRoom || !currentUser) return;
 
-    // Subscribe to room updates from Firebase
+    let cancelled = false;
+    const userId = currentUser.id;
+
+    // Subscribe to room updates from Firebase. Chat, presence, and playback
+    // writes also live under this node, so ignore snapshots older than a
+    // local queue change or they snap the player back to the previous song.
     const unsubscribe = firebaseService.subscribeToRoom(currentRoom.id, (data) => {
+      if (cancelled) return;
+
+      const now = Date.now();
       const videoUpdatedAt = data.currentVideoUpdatedAt || 0;
       const playlistUpdatedAt = data.playlistUpdatedAt || 0;
-      const isOwnVideoAck = data.currentVideoUpdatedBy === currentUser.id &&
-        data.currentVideo?.id === currentVideoRef.current.id;
-      const isOwnPlaylistAck = data.playlistUpdatedBy === currentUser.id &&
-        arePlaylistsEqual(data.playlist || [], playlistRef.current);
+      const videoStale = isStaleRemoteUpdate(pendingVideoSyncRef.current?.at ?? null, videoUpdatedAt, now);
+      const playlistStale = isStaleRemoteUpdate(pendingPlaylistSyncRef.current?.at ?? null, playlistUpdatedAt, now);
 
-      // ref를 사용하여 항상 최신 currentVideo와 비교
-      if (
-        data.currentVideo &&
-        data.currentVideo.id !== currentVideoRef.current.id &&
-        (!isOwnVideoAck || videoUpdatedAt > lastAppliedCurrentVideoAtRef.current)
-      ) {
-        currentVideoRef.current = data.currentVideo;
-        setCurrentVideo(data.currentVideo);
+      if (!videoStale && data.currentVideo) {
+        const changed = data.currentVideo.id !== currentVideoRef.current.id;
+        const remoteReplay = !changed
+          && !!data.currentVideoUpdatedBy
+          && data.currentVideoUpdatedBy !== userId
+          && videoUpdatedAt > lastAppliedCurrentVideoAtRef.current;
+
+        if (changed) {
+          currentVideoRef.current = data.currentVideo;
+          setCurrentVideo(data.currentVideo);
+          const pending = pendingVideoSyncRef.current;
+          if (pending && data.currentVideo.id !== pending.id && videoUpdatedAt >= pending.at) {
+            pendingVideoSyncRef.current = null;
+          }
+        } else if (remoteReplay) {
+          setReplayToken((token) => token + 1);
+        }
+
+        const pending = pendingVideoSyncRef.current;
+        if (
+          pending &&
+          data.currentVideoUpdatedBy === userId &&
+          data.currentVideo.id === pending.id &&
+          videoUpdatedAt >= pending.at
+        ) {
+          pendingVideoSyncRef.current = null;
+        }
       }
-      if (videoUpdatedAt > lastAppliedCurrentVideoAtRef.current) {
+      if (!videoStale && videoUpdatedAt > lastAppliedCurrentVideoAtRef.current) {
         lastAppliedCurrentVideoAtRef.current = videoUpdatedAt;
       }
-      if (data.playlist) {
-        // 함수형 업데이트로 playlist 비교
-        setPlaylist(prev => {
-          // 내용이 같으면 업데이트하지 않음
-          if (arePlaylistsEqual(prev, data.playlist) || isOwnPlaylistAck) {
-            return prev;
-          }
-          return data.playlist;
-        });
+
+      if (data.playlist && !playlistStale && !arePlaylistsEqual(playlistRef.current, data.playlist)) {
+        playlistRef.current = data.playlist;
+        setPlaylist(data.playlist);
+      }
+      if (!playlistStale) {
+        const pending = pendingPlaylistSyncRef.current;
+        if (pending && data.playlistUpdatedBy === userId && playlistUpdatedAt >= pending.at) {
+          pendingPlaylistSyncRef.current = null;
+        }
         if (playlistUpdatedAt > lastAppliedPlaylistAtRef.current) {
           lastAppliedPlaylistAtRef.current = playlistUpdatedAt;
         }
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hasJoined, currentRoom?.id, currentUser?.id]);
 
   // --- Firebase Real-time Chat ---
@@ -357,50 +456,58 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hasJoined || !currentRoom || !currentUser) return;
 
-    // Subscribe to users from Firebase
+    let cancelled = false;
+    let initialized = false;
+    const names = new Map<string, string>();
+    const selfId = currentUser.id;
+
     const unsubscribe = firebaseService.subscribeToUsers(currentRoom.id, (firebaseUsers) => {
+      if (cancelled) return;
+
       const currentUserIds = new Set(firebaseUsers.map(u => u.id));
-      const prevUserIds = prevUsersRef.current;
 
-      // 입장한 사용자 찾기 (이전에 없었는데 지금 있는 사용자)
-      firebaseUsers.forEach(fu => {
-        // 자기 자신은 제외, 이전에 없었던 사용자만
-        if (fu.id !== currentUser.id && !prevUserIds.has(fu.id)) {
-          setMessages(prev => [...prev, {
-            id: `join-${fu.id}-${Date.now()}`,
-            userId: 'ai-1',
-            text: t('userJoinedShort', { name: fu.name }),
-            timestamp: Date.now()
-          }]);
-        }
-      });
+      // The first snapshot is whoever is already in the room. Announcing them
+      // as new joins makes every participant look like they just arrived.
+      if (!initialized) {
+        initialized = true;
+        firebaseUsers.forEach((fu) => names.set(fu.id, fu.name));
+        prevUsersRef.current = currentUserIds;
+      } else {
+        firebaseUsers.forEach((fu) => {
+          if (fu.id !== selfId && !prevUsersRef.current.has(fu.id)) {
+            setMessages(prev => [...prev, {
+              id: `join-${fu.id}-${Date.now()}`,
+              userId: 'ai-1',
+              text: tRef.current('userJoinedShort', { name: fu.name }),
+              timestamp: Date.now()
+            }]);
+          }
+          names.set(fu.id, fu.name);
+        });
 
-      // 퇴장한 사용자 찾기 (이전에 있었는데 지금 없는 사용자)
-      prevUserIds.forEach(prevId => {
-        // 자기 자신은 제외
-        if (prevId !== currentUser.id && !currentUserIds.has(prevId)) {
-          // 이전 사용자 이름 찾기 (users state에서)
-          const leftUser = users.find(u => u.id === prevId);
-          const userName = leftUser?.name || '알 수 없는 사용자';
+        prevUsersRef.current.forEach((prevId) => {
+          if (prevId !== selfId && !currentUserIds.has(prevId)) {
+            const userName = names.get(prevId) || tRef.current('unknownUser');
+            setMessages(prev => [...prev, {
+              id: `leave-${prevId}-${Date.now()}`,
+              userId: 'ai-1',
+              text: tRef.current('userLeft', { name: userName }),
+              timestamp: Date.now()
+            }]);
+            names.delete(prevId);
+          }
+        });
 
-          setMessages(prev => [...prev, {
-            id: `leave-${prevId}-${Date.now()}`,
-            userId: 'ai-1',
-            text: t('userLeft', { name: userName }),
-            timestamp: Date.now()
-          }]);
-        }
-      });
+        prevUsersRef.current = currentUserIds;
+      }
 
-      // 현재 사용자 목록 저장
-      prevUsersRef.current = currentUserIds;
-
-      // Keep the AI user and add Firebase users
       setUsers(prev => {
-        const aiUser = prev.find(u => u.isAi);
-        const usersList: User[] = aiUser ? [aiUser] : [SYSTEM_AI];
-
-        firebaseUsers.forEach(fu => {
+        const aiUser = prev.find(u => u.isAi) ?? SYSTEM_AI;
+        const seen = new Set<string>();
+        const usersList: User[] = [aiUser];
+        firebaseUsers.forEach((fu) => {
+          if (!fu.id || seen.has(fu.id)) return;
+          seen.add(fu.id);
           usersList.push({
             id: fu.id,
             name: fu.name,
@@ -408,26 +515,37 @@ const App: React.FC = () => {
             isAi: false
           });
         });
-
+        if (selfId && !seen.has(selfId)) {
+          const self = prev.find(u => u.id === selfId);
+          if (self) usersList.push(self);
+        }
         return usersList;
       });
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      prevUsersRef.current = new Set();
+      unsubscribe();
+    };
   }, [hasJoined, currentRoom?.id, currentUser?.id]);
 
   // --- Firebase Real-time Playback Sync ---
   useEffect(() => {
     if (!hasJoined || !currentRoom || !isSyncEnabled) return;
 
-    // Subscribe to playback state from Firebase
+    let cancelled = false;
     const unsubscribe = firebaseService.subscribeToPlaybackState(currentRoom.id, (state) => {
+      if (cancelled) return;
       if (state) {
         setPlaybackSyncState(state);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hasJoined, currentRoom?.id, isSyncEnabled]);
 
   // --- Handlers ---
@@ -435,16 +553,18 @@ const App: React.FC = () => {
   const handleCreateRoom = async (nickname: string, apiKey: string) => {
     try {
       const newRoom = await firebaseService.createRoom(apiKey, nickname);
-      setCurrentRoom(newRoom);
-
       const newUser: User = {
         id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         name: nickname,
         avatar: '',
         isAi: false
       };
+      currentRoomRef.current = newRoom;
+      currentUserRef.current = newUser;
+      setCurrentRoom(newRoom);
       setCurrentUser(newUser);
       setUsers(prev => [...prev, newUser]);
+      publishPlayback(INITIAL_VIDEO, [INITIAL_VIDEO], false);
       setHasJoined(true);
       setShowStartModal(true);
 
@@ -479,14 +599,16 @@ const App: React.FC = () => {
         return;
       }
 
-      setCurrentRoom(room);
-
       const newUser: User = {
         id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         name: nickname,
         avatar: '',
         isAi: false
       };
+      currentRoomRef.current = room;
+      currentUserRef.current = newUser;
+      hydrateRoomPlayback(room);
+      setCurrentRoom(room);
       setCurrentUser(newUser);
       setUsers(prev => [...prev, newUser]);
       setHasJoined(true);
@@ -525,14 +647,16 @@ const App: React.FC = () => {
         return;
       }
 
-      setCurrentRoom(room);
-
       const newUser: User = {
         id: `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         name: nickname,
         avatar: '',
         isAi: false
       };
+      currentRoomRef.current = room;
+      currentUserRef.current = newUser;
+      hydrateRoomPlayback(room);
+      setCurrentRoom(room);
       setCurrentUser(newUser);
       setUsers(prev => [...prev, newUser]);
       setHasJoined(true);
@@ -676,30 +800,10 @@ const App: React.FC = () => {
       const videos = await youtubeService.fetchPlaylistItems(playlistId);
 
       if (videos.length > 0) {
-        setPlaylist(prev => {
-          // Avoid duplicates
-          const newVideos = videos.filter(v => !prev.some(p => p.id === v.id));
-          return [...prev, ...newVideos];
-        });
-
-        if (currentRoom) {
-          // Sync new playlist to Firebase (merging with existing)
-          // Note: In a real app we might want to handle this more carefully to avoid overwrites
-          // but for now we'll append. 
-          // However, we can't easily get the 'latest' firebase state here without listening.
-          // We'll rely on our local state being up to date via the listener.
-          const currentPlaylist = playlist; // This might be stale if there are many updates?
-          // Actually state updates are async. 
-          // Let's rely on the setPlaylist callback result if possible, 
-          // but we need to trigger the side effect.
-
-          // Better approach: Calculate new list then update both.
-          const newVideos = videos.filter(v => !playlist.some(p => p.id === v.id));
-          const updatedPlaylist = [...playlist, ...newVideos];
-
-          if (newVideos.length > 0 && currentUser) {
-            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
-          }
+        const currentPlaylist = playlistRef.current;
+        const newVideos = videos.filter(v => !currentPlaylist.some(p => p.id === v.id));
+        if (newVideos.length > 0) {
+          publishPlaylist([...currentPlaylist, ...newVideos]);
         }
 
         const msg: Message = {
@@ -735,32 +839,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleVideoChange = useCallback((video: Video) => {
-    // currentVideoRef 업데이트 (Firebase sync에서 중복 방지용)
-    currentVideoRef.current = video;
-    setCurrentVideo(video);
-
-    // Calculate new playlist first to avoid side effects in setter
-    let updatedPlaylist: Video[] = [];
-    setPlaylist(prev => {
-      const isVideoInPlaylist = prev.some(v => v.id === video.id);
-      updatedPlaylist = isVideoInPlaylist ? prev : [video, ...prev];
-      return updatedPlaylist;
-    });
-
-    // Sync to Firebase (after state update) - ref를 사용하여 최신 room 참조
-    setTimeout(() => {
-      const room = currentRoomRef.current;
-      const actorId = currentUserRef.current?.id;
-      if (room && actorId && updatedPlaylist.length > 0) {
-        firebaseService.updateCurrentVideo(room.id, video, actorId);
-        firebaseService.updatePlaylist(room.id, updatedPlaylist, actorId);
-      }
-    }, 0);
-
-    // Broadcast local
+  const handleVideoChange = useCallback((video: Video, playlistOverride?: Video[]) => {
+    const base = playlistOverride ?? playlistRef.current;
+    const updatedPlaylist = base.some(item => item.id === video.id) ? base : [video, ...base];
+    publishPlayback(video, updatedPlaylist);
     syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video } });
-  }, []);
+  }, [publishPlayback]);
 
   const handleGenerateRecommendations = async () => {
     // API 키가 없으면 추천 기능 비활성화
@@ -770,16 +854,10 @@ const App: React.FC = () => {
     setIsGenerating(true);
     const recs = await getVideoRecommendations(currentVideo.title, "재미있는 영상이나 유사한 분위기", currentRoom?.apiKey || '');
 
-    const newRecs = recs.filter(r => !playlist.some(p => p.id === r.id));
+    const newRecs = recs.filter(r => !playlistRef.current.some(p => p.id === r.id));
 
     if (newRecs.length > 0) {
-      const updatedPlaylist = [...playlist, ...newRecs];
-      setPlaylist(updatedPlaylist);
-
-      // Sync to Firebase
-      if (currentRoom && currentUser) {
-        firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
-      }
+      publishPlaylist([...playlistRef.current, ...newRecs]);
       const msg: Message = {
         id: `sys-rec-${Date.now()}`,
         userId: 'ai-1',
@@ -851,15 +929,11 @@ const App: React.FC = () => {
         thumbnail: v.thumbnail
       }));
 
-      setPlaylist(prev => [...prev, ...videoList]);
-
-      // Play first video of the playlist
-      handleVideoChange(videoList[0]);
-
-      // Update Firebase if in a room
-      if (currentRoom && currentUser) {
-        firebaseService.updatePlaylist(currentRoom.id, [...playlist, ...videoList], currentUser.id);
-      }
+      const merged = [...playlistRef.current];
+      videoList.forEach((video) => {
+        if (!merged.some((item) => item.id === video.id)) merged.push(video);
+      });
+      handleVideoChange(videoList[0], merged);
 
       setMessages(prev => [...prev, {
         id: `playlist-${Date.now()}`,
@@ -884,46 +958,33 @@ const App: React.FC = () => {
   };
 
   const handleVideoEnd = useCallback(() => {
-    // playlistRef를 사용하여 항상 최신 playlist 참조
-    const currentPlaylist = playlistRef.current;
-    const currentVid = currentVideoRef.current;
-    
-    console.log('handleVideoEnd called. Mode:', repeatMode, 'Shuffle:', isShuffleOn, 'Playlist length:', currentPlaylist.length);
-    
-    if (repeatMode === 'one') {
-      // 한 곡 반복: 같은 비디오를 다시 재생
-      // 같은 비디오를 다시 재생하기 위해 강제로 비디오 변경 트리거
-      handleVideoChange({ ...currentVid });
-      return;
-    }
-
-    const currentIndex = currentPlaylist.findIndex(v => v.id === currentVid.id);
-    
-    console.log('Current Index:', currentIndex, 'Playlist Length:', currentPlaylist.length);
-
-    if (isShuffleOn) {
-      const otherVideos = currentPlaylist.filter(v => v.id !== currentVid.id);
-      if (otherVideos.length > 0) {
-        const randomVideo = otherVideos[Math.floor(Math.random() * otherVideos.length)];
-        handleVideoChange(randomVideo);
-      } else if (currentPlaylist.length === 1) {
-        // 플레이리스트에 한 곡만 있으면 그 곡 다시 재생
-        handleVideoChange({ ...currentPlaylist[0] });
-      }
-    } else {
-      const nextIndex = currentIndex + 1;
-      if (nextIndex < currentPlaylist.length) {
-        const nextVideo = currentPlaylist[nextIndex];
-        console.log('Playing next video:', nextVideo);
-        handleVideoChange(nextVideo);
-      } else if (repeatMode === 'all' && currentPlaylist.length > 0) {
-        console.log('Looping to first video');
-        handleVideoChange(currentPlaylist[0]);
-      } else {
-        console.log('End of playlist');
-      }
-    }
+    const result = advanceQueue(
+      playlistRef.current,
+      currentVideoRef.current.id,
+      repeatMode,
+      isShuffleOn,
+    );
+    if (!result.video) return;
+    handleVideoChange(result.video, result.playlist);
   }, [isShuffleOn, repeatMode, handleVideoChange]);
+
+  const handleSkip = useCallback(() => {
+    const result = skipQueue(playlistRef.current, currentVideoRef.current.id);
+    if (!result.video) return;
+    handleVideoChange(result.video, result.playlist);
+  }, [handleVideoChange]);
+
+  const handlePlaybackError = useCallback(() => {
+    const result = skipUnplayable(playlistRef.current, currentVideoRef.current.id, repeatMode);
+    if (!result.video) return;
+    handleVideoChange(result.video, result.playlist);
+    setMessages(prev => [...prev, {
+      id: `skip-${Date.now()}`,
+      userId: 'ai-1',
+      text: tRef.current('skipUnplayable'),
+      timestamp: Date.now()
+    }]);
+  }, [handleVideoChange, repeatMode]);
 
   // Load saved playlists on mount
   useEffect(() => {
@@ -945,13 +1006,8 @@ const App: React.FC = () => {
   };
 
   const handleLoadPlaylist = (savedPlaylist: SavedPlaylist) => {
-    setPlaylist(savedPlaylist.videos);
     if (savedPlaylist.videos.length > 0) {
-      setCurrentVideo(savedPlaylist.videos[0]);
-    }
-    if (currentRoom && currentUser && savedPlaylist.videos.length > 0) {
-      firebaseService.updateCurrentVideo(currentRoom.id, savedPlaylist.videos[0], currentUser.id);
-      firebaseService.updatePlaylist(currentRoom.id, savedPlaylist.videos, currentUser.id);
+      publishPlayback(savedPlaylist.videos[0], savedPlaylist.videos);
     }
 
     const msg: Message = {
@@ -992,14 +1048,7 @@ const App: React.FC = () => {
           thumbnail: v.thumbnail
         }));
 
-        setCurrentVideo(videoList[0]);
-        setPlaylist(videoList);
-
-        // Sync to Firebase
-        if (currentRoom && currentUser) {
-          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0], currentUser.id);
-          firebaseService.updatePlaylist(currentRoom.id, videoList, currentUser.id);
-        }
+        publishPlayback(videoList[0], videoList);
 
         const genreInfo = GENRE_OPTIONS.find(g => g.id === genre);
         const genreName = genreInfo ? `${genreInfo.emoji} ${genreInfo.name}` : '🎵';
@@ -1043,13 +1092,7 @@ const App: React.FC = () => {
           thumbnail: v.thumbnail
         }));
 
-        setCurrentVideo(videoList[0]);
-        setPlaylist(videoList);
-
-        if (currentRoom && currentUser) {
-          firebaseService.updateCurrentVideo(currentRoom.id, videoList[0], currentUser.id);
-          firebaseService.updatePlaylist(currentRoom.id, videoList, currentUser.id);
-        }
+        publishPlayback(videoList[0], videoList);
 
         const msg: Message = {
           id: `sys-ranking-${Date.now()}`,
@@ -1076,13 +1119,8 @@ const App: React.FC = () => {
   };
 
   const handleStartWithPlaylist = (savedPlaylist: SavedPlaylist) => {
-    setPlaylist(savedPlaylist.videos);
     if (savedPlaylist.videos.length > 0) {
-      setCurrentVideo(savedPlaylist.videos[0]);
-    }
-    if (currentRoom && currentUser && savedPlaylist.videos.length > 0) {
-      firebaseService.updateCurrentVideo(currentRoom.id, savedPlaylist.videos[0], currentUser.id);
-      firebaseService.updatePlaylist(currentRoom.id, savedPlaylist.videos, currentUser.id);
+      publishPlayback(savedPlaylist.videos[0], savedPlaylist.videos);
     }
     setShowStartModal(false);
 
@@ -1096,15 +1134,8 @@ const App: React.FC = () => {
   };
 
   const handleStartWithVideo = (video: Video) => {
-    setCurrentVideo(video);
-    setPlaylist([video]);
+    publishPlayback(video, [video]);
     setShowStartModal(false);
-
-    // Sync to Firebase
-    if (currentRoom && currentUser) {
-      firebaseService.updateCurrentVideo(currentRoom.id, video, currentUser.id);
-      firebaseService.updatePlaylist(currentRoom.id, [video], currentUser.id);
-    }
 
     const msg: Message = {
       id: `sys-start-${Date.now()}`,
@@ -1116,28 +1147,16 @@ const App: React.FC = () => {
   };
 
   const handleRemoveVideo = (videoId: string) => {
-    const newPlaylist = playlist.filter(v => v.id !== videoId);
-    setPlaylist(newPlaylist);
-
-    if (currentRoom && currentUser) {
-      firebaseService.updatePlaylist(currentRoom.id, newPlaylist, currentUser.id);
-
-      // If we removed the current video, play the next one (or stop/none)
-      if (videoId === currentVideo.id) {
-        if (newPlaylist.length > 0) {
-          const nextVideo = newPlaylist[0];
-          setCurrentVideo(nextVideo);
-          firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
-        }
-      }
+    const newPlaylist = playlistRef.current.filter(v => v.id !== videoId);
+    if (videoId === currentVideoRef.current.id && newPlaylist.length > 0) {
+      publishPlayback(newPlaylist[0], newPlaylist);
+      return;
     }
+    publishPlaylist(newPlaylist);
   };
 
   const handleReorderPlaylist = (newOrder: Video[]) => {
-    setPlaylist(newOrder);
-    if (currentRoom && currentUser) {
-      firebaseService.updatePlaylist(currentRoom.id, newOrder, currentUser.id);
-    }
+    publishPlaylist(newOrder);
   };
 
   // Playback Sync Handler
@@ -1215,44 +1234,33 @@ const App: React.FC = () => {
           if (videos.length === 0) return;
 
           // Calculate new playlist based on mode
-          const newVideos = videos.filter(v => !playlist.some(p => p.id === v.id));
+          const sourcePlaylist = playlistRef.current;
+          const newVideos = videos.filter(v => !sourcePlaylist.some(p => p.id === v.id));
           let updatedPlaylist: Video[];
           let videoToPlay: Video;
 
           if (mode === 'playNow') {
             // Play Now: Insert at current position + 1 (right after current video)
-            const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
+            const currentIndex = sourcePlaylist.findIndex(v => v.id === currentVideoRef.current.id);
             if (currentIndex >= 0) {
               updatedPlaylist = [
-                ...playlist.slice(0, currentIndex + 1),
+                ...sourcePlaylist.slice(0, currentIndex + 1),
                 ...newVideos,
-                ...playlist.slice(currentIndex + 1)
+                ...sourcePlaylist.slice(currentIndex + 1)
               ];
             } else {
-              updatedPlaylist = [...newVideos, ...playlist];
+              updatedPlaylist = [...newVideos, ...sourcePlaylist];
             }
             videoToPlay = newVideos[0] || videos[0];
           } else {
             // Play Next (default): Add to end of playlist
-            updatedPlaylist = [...playlist, ...newVideos];
+            updatedPlaylist = [...sourcePlaylist, ...newVideos];
             videoToPlay = videos[0];
           }
 
-          // Update playlist first (synchronously set the state)
-          setPlaylist(updatedPlaylist);
-
-          // Set current video directly without going through handleVideoChange
-          // to avoid handleVideoChange adding the video to the front of playlist
-          currentVideoRef.current = videoToPlay;
-          setCurrentVideo(videoToPlay);
-
-          // Sync to Firebase
-          if (currentRoom && currentUser) {
-            firebaseService.updateCurrentVideo(currentRoom.id, videoToPlay, currentUser.id);
-            firebaseService.updatePlaylist(currentRoom.id, updatedPlaylist, currentUser.id);
-          }
-
-          // Broadcast local
+          // Keep the computed order. handleVideoChange would move the picked
+          // video to the front, which breaks play-next / play-now placement.
+          publishPlayback(videoToPlay, updatedPlaylist);
           syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video: videoToPlay } });
 
           // Notify
@@ -1481,11 +1489,15 @@ const App: React.FC = () => {
               // Reset state
               setHasJoined(false);
               setCurrentRoom(null);
-              setCurrentUser({ id: '', name: '', avatar: '', isAi: false });
+              setCurrentUser(null);
               setUsers([SYSTEM_AI]);
               setMessages([]);
-              setPlaylist([]);
-              setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
+              setPlaylist([INITIAL_VIDEO]);
+              setCurrentVideo(INITIAL_VIDEO);
+              playlistRef.current = [INITIAL_VIDEO];
+              currentVideoRef.current = INITIAL_VIDEO;
+              pendingVideoSyncRef.current = null;
+              pendingPlaylistSyncRef.current = null;
             }}
             className="flex items-center gap-1 sm:gap-2 bg-[#FF453A]/12 hover:bg-[#FF453A] text-[#FF453A] hover:text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors border border-[#FF453A]/25"
             title={t('leave')}
@@ -1593,25 +1605,10 @@ const App: React.FC = () => {
         <section className="lg:col-span-8 flex flex-col gap-4 lg-force-flex">
           <VideoPlayer
             videoId={currentVideo.id}
+            replayToken={replayToken}
             onVideoEnd={handleVideoEnd}
-            onVideoError={() => {
-              // Auto-skip to next video on error
-              if (playlist.length > 1) {
-                const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
-                const nextIndex = (currentIndex + 1) % playlist.length;
-                const nextVideo = playlist[nextIndex];
-                setCurrentVideo(nextVideo);
-                if (currentRoom && currentUser) {
-                  firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
-                }
-                setMessages(prev => [...prev, {
-                  id: `skip-${Date.now()}`,
-                  userId: 'ai-1',
-                  text: t('skipUnplayable'),
-                  timestamp: Date.now()
-                }]);
-              }
-            }}
+            onSkip={handleSkip}
+            onVideoError={handlePlaybackError}
             currentUserId={currentUser?.id}
             syncState={playbackSyncState}
             onPlaybackSync={handlePlaybackSync}
