@@ -119,7 +119,7 @@ const SortableVideoItem: React.FC<SortableVideoItemProps> = ({
           e.stopPropagation();
           onRemoveVideo?.(video.id);
         }}
-        className="flex-shrink-0 p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
+        className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-gray-500 transition-all hover:bg-red-500/10 hover:text-red-500 lg:h-8 lg:w-8 lg:opacity-0 lg:group-hover:opacity-100"
         title={t('removeFromList')}
       >
         <Trash2 size={14} />
@@ -145,6 +145,7 @@ interface PlaylistProps {
   onDeletePlaylist?: (id: string) => void;
   onRemoveVideo?: (id: string) => void;
   onReorderPlaylist?: (newOrder: Video[]) => void;
+  onBrowse?: () => void;
 }
 
 export const Playlist: React.FC<PlaylistProps> = ({
@@ -163,7 +164,8 @@ export const Playlist: React.FC<PlaylistProps> = ({
   onLoadPlaylist,
   onDeletePlaylist,
   onRemoveVideo,
-  onReorderPlaylist
+  onReorderPlaylist,
+  onBrowse,
 }) => {
   const { t } = useI18n();
   const RepeatIcon = repeatMode === 'one' ? Repeat1 : Repeat;
@@ -212,7 +214,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
   const currentIndex = videos.findIndex(v => v.id === currentVideoId);
 
   return (
-    <div className="flex flex-col apple-surface rounded-lg overflow-hidden relative">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-none apple-surface shadow-none">
       {/* Save Modal */}
       {showSaveModal && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center p-4">
@@ -285,22 +287,30 @@ export const Playlist: React.FC<PlaylistProps> = ({
       )}
 
       {/* Header */}
-      <div className="p-3 border-b border-white/10 bg-black/25 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-red/15 flex items-center justify-center">
-              <Play size={14} className="text-brand-red" fill="currentColor" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-white text-sm">{t('playlistTitle')}</h3>
-              <p className="text-xs text-gray-500">{videos.length} {t('songs')} {currentIndex >= 0 && `• ${currentIndex + 1}${t('nowPlaying')}`}</p>
-            </div>
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/25 p-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-red/15">
+            <Play size={14} className="text-brand-red" fill="currentColor" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold text-white">{t('playlistTitle')}</h3>
+            <p className="truncate text-xs text-gray-500">{videos.length} {t('songs')} {currentIndex >= 0 && `• ${currentIndex + 1}${t('nowPlaying')}`}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onBrowse && (
+            <button
+              onClick={onBrowse}
+              className="flex h-11 items-center gap-1 rounded-lg px-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white"
+              title={t('browseMusic')}
+            >
+              <Music size={16} />
+              <span className="hidden sm:inline">{t('browseMusic')}</span>
+            </button>
+          )}
           <button
             onClick={onToggleShuffle}
-            className={`p-2 rounded-lg transition-colors ${isShuffleOn
+            className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors ${isShuffleOn
               ? 'bg-[#30D158]/15 text-[#30D158]'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
@@ -310,7 +320,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
           </button>
           <button
             onClick={onToggleRepeat}
-            className={`p-2 rounded-lg transition-colors ${repeatMode !== 'off'
+            className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors ${repeatMode !== 'off'
               ? 'bg-[#30D158]/15 text-[#30D158]'
               : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
@@ -322,14 +332,14 @@ export const Playlist: React.FC<PlaylistProps> = ({
           <button
             onClick={() => setShowSaveModal(true)}
             disabled={videos.length === 0}
-            className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
             title={t('savePlaylist')}
           >
             <Save size={16} />
           </button>
           <button
             onClick={() => setShowLoadModal(true)}
-            className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-white/10"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
             title={t('loadPlaylist')}
           >
             <FolderOpen size={16} />
@@ -342,7 +352,7 @@ export const Playlist: React.FC<PlaylistProps> = ({
         <button
           onClick={onGenerateRecommendations}
           disabled={isGenerating || !hasApiKey}
-          className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all border ${
+          className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 transition-all ${
             hasApiKey 
               ? 'bg-[#5E5CE6]/15 hover:bg-[#5E5CE6]/25 text-[#BFBEFF] border-[#5E5CE6]/30 disabled:opacity-50'
               : 'bg-white/5 text-gray-500 border-white/10 cursor-not-allowed'
@@ -355,17 +365,13 @@ export const Playlist: React.FC<PlaylistProps> = ({
       </div>
 
       {/* Video List - 스크롤 활성화 */}
-      <div
-        className="overflow-y-auto overflow-x-hidden"
-        style={{ maxHeight: '400px', minHeight: '200px' }}
-      >
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {videos.length === 0 ? (
-          <div className="text-center text-gray-500 py-12 px-4">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-lg bg-white/10 flex items-center justify-center">
+          <div className="px-4 py-12 text-center text-gray-400">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg bg-white/10">
               <Music size={32} className="opacity-50" />
             </div>
-            <p className="font-medium mb-1">{t('emptyPlaylist')}</p>
-            <p className="text-sm text-gray-600">{t('emptyPlaylistHint')}</p>
+            <p className="text-sm leading-relaxed">{t('emptyPlaylist')}</p>
           </div>
         ) : (
           <DndContext

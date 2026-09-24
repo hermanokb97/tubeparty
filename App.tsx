@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Message, User, Video, TabType, SyncAction, SavedPlaylist, Room } from './types';
-import { VideoPlayer, PlaybackSyncState } from './components/VideoPlayer';
+import { Message, User, Video, SyncAction, SavedPlaylist, Room } from './types';
+import { VideoPlayer, PlaybackSyncState, PlayerControlsMode } from './components/VideoPlayer';
 import { ChatRoom } from './components/ChatRoom';
 import { Playlist, RepeatMode } from './components/Playlist';
 import { Onboarding } from './components/Onboarding';
 import { StartModal } from './components/StartModal';
-import { YouTubeSearchModal } from './components/YouTubeSearchModal';
 import { PlaylistBrowser } from './components/PlaylistBrowser';
 import { VoiceChat } from './components/VoiceChat';
+import { MoreMenu } from './components/MoreMenu';
 import { extractVideoId, getAiChatResponse, getVideoRecommendations } from './services/geminiService';
 import * as syncService from './services/syncService';
 import * as playlistStorage from './services/playlistStorage';
@@ -15,7 +15,26 @@ import * as firebaseService from './services/firebaseService';
 import { GenreType, GENRE_OPTIONS } from './constants';
 import * as youtubeService from './services/youtubeService';
 import { useI18n, languageOptions, Language, getCurrentLanguageInfo } from './services/i18n';
-import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Share2, Check, Copy, Search, Loader2, X, ListMusic, LogOut, Users, UserX, Globe } from 'lucide-react';
+import { MonitorPlay, MessageSquare, ListVideo, Link as LinkIcon, Plus, Check, Copy, Search, Loader2, X, EyeOff, MoreHorizontal } from 'lucide-react';
+
+type MobileView = 'watch' | 'chat' | 'playlist' | 'more';
+type SidePanel = 'chat' | 'playlist' | 'hidden';
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(query).matches : false
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, [query]);
+
+  return matches;
+}
 
 // Initial Data
 const SYSTEM_AI: User = { id: 'ai-1', name: 'TubeBot', avatar: '', isAi: true };
@@ -59,7 +78,6 @@ const buildInviteLink = (token: string): string => {
 const App: React.FC = () => {
   // --- i18n ---
   const { language, setLanguage, t } = useI18n();
-  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
 
   // --- State ---
   const [hasJoined, setHasJoined] = useState(false);
@@ -86,9 +104,33 @@ const App: React.FC = () => {
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [urlInput, setUrlInput] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>(TabType.CHAT);
+  const [mobileView, setMobileView] = useState<MobileView>('watch');
+  const [sidePanel, setSidePanel] = useState<SidePanel>('chat');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const sidePanelBeforeCinema = useRef<'chat' | 'playlist'>('chat');
+  const toastTimerRef = useRef<number | null>(null);
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
-  const [showCopiedToast, setShowCopiedToast] = useState(false);
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 2200);
+  }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [moreOpen]);
+
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => getInviteTokenFromUrl());
   const [inviteStatus, setInviteStatus] = useState<InviteStatus>(pendingInviteToken ? 'checking' : 'none');
 
@@ -105,9 +147,6 @@ const App: React.FC = () => {
   // Start Modal State
   const [showStartModal, setShowStartModal] = useState(false);
   const [isStartLoading, setIsStartLoading] = useState(false);
-
-  // YouTube Search Modal State
-  const [showSearchModal, setShowSearchModal] = useState(false);
 
   // Inline Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -797,8 +836,8 @@ const App: React.FC = () => {
       try {
         const invite = await firebaseService.createInvite(currentRoom.id);
         await navigator.clipboard.writeText(buildInviteLink(invite.token));
-        setShowCopiedToast(true);
-        setTimeout(() => setShowCopiedToast(false), 2000);
+        showToast(t('inviteLinkCopied'));
+        setMoreOpen(false);
       } catch (error) {
         console.error('Failed to create invite link:', error);
         alert(t('inviteCreateFailed'));
@@ -832,6 +871,7 @@ const App: React.FC = () => {
     handleVideoChange(video);
     setSearchQuery('');
     setSearchResults([]);
+    setMobileView('watch');
     setMessages(prev => [...prev, {
       id: `search-${Date.now()}`,
       userId: 'ai-1',
@@ -1157,7 +1197,44 @@ const App: React.FC = () => {
     setIsSyncEnabled(prev => !prev);
   };
 
-  // Chat Handlers ---
+  const handleLeaveRoom = () => {
+    if (currentRoom && currentUser) {
+      firebaseService.removeUserFromRoom(currentRoom.id, currentUser.id);
+    }
+    sessionStorage.removeItem('tubePartySession');
+    setHasJoined(false);
+    setCurrentRoom(null);
+    setCurrentUser({ id: '', name: '', avatar: '', isAi: false });
+    setUsers([SYSTEM_AI]);
+    setMessages([]);
+    setPlaylist([]);
+    setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
+    setMoreOpen(false);
+    setMobileView('watch');
+  };
+
+  const copyRoomCode = async () => {
+    if (!currentRoom) return;
+    try {
+      await navigator.clipboard.writeText(currentRoom.id);
+      showToast(t('roomCodeCopied'));
+    } catch (error) {
+      console.error('Failed to copy room code:', error);
+    }
+  };
+
+  const toggleCinema = () => {
+    setSidePanel((prev) => {
+      if (prev === 'hidden') return sidePanelBeforeCinema.current;
+      sidePanelBeforeCinema.current = prev;
+      return 'hidden';
+    });
+  };
+
+  const openSidePanel = (panel: 'chat' | 'playlist') => {
+    sidePanelBeforeCinema.current = panel;
+    setSidePanel(panel);
+  };
 
   // --- Render ---
 
@@ -1176,8 +1253,157 @@ const App: React.FC = () => {
     );
   }
 
+  const controlsMode: PlayerControlsMode = !isDesktop ? 'tap' : sidePanel === 'hidden' ? 'hover' : 'always';
+  const minimized = !isDesktop && mobileView !== 'watch';
+  const humanCount = users.filter((user) => !user.isAi).length;
+  const showMobileTabs = !isDesktop && keyboardInset === 0;
+
+  const voiceChat = currentRoom && currentUser ? (
+    <VoiceChat
+      roomId={currentRoom.id}
+      userId={currentUser.id}
+      userName={currentUser.name}
+      onError={(error) => {
+        setMessages((prev) => [...prev, {
+          id: `voice-error-${Date.now()}`,
+          userId: 'ai-1',
+          text: `${t('voiceError')} ${error}`,
+          timestamp: Date.now()
+        }]);
+      }}
+    />
+  ) : null;
+
+  const moreMenu = (
+    <MoreMenu
+      t={t}
+      isSyncEnabled={isSyncEnabled}
+      onToggleSync={handleToggleSync}
+      onInvite={handleShare}
+      onLeave={handleLeaveRoom}
+      language={language}
+      onLanguage={setLanguage}
+      voice={voiceChat}
+    />
+  );
+
+  const chatPanel = (
+    <ChatRoom
+      messages={messages}
+      users={users}
+      currentUser={currentUser!}
+      onSendMessage={handleSendMessage}
+      isAiTyping={isAiTyping}
+      variant={isDesktop ? 'panel' : 'sheet'}
+      onKeyboardInset={isDesktop ? undefined : setKeyboardInset}
+    />
+  );
+
+  const queuePanel = (
+    <div className="flex h-full min-h-0 flex-col bg-black/20">
+      <div className="shrink-0 border-b border-white/10 p-3">
+        <div className="mb-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => { setInputMode('search'); setSearchResults([]); }}
+            className={`flex h-11 flex-1 items-center justify-center gap-1 rounded-lg text-sm ${inputMode === 'search' ? 'bg-brand-red text-white' : 'bg-white/5 text-gray-400'}`}
+          >
+            <Search size={14} />
+            {t('searchMobile')}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setInputMode('link'); setSearchResults([]); }}
+            className={`flex h-11 flex-1 items-center justify-center gap-1 rounded-lg text-sm ${inputMode === 'link' ? 'bg-brand-red text-white' : 'bg-white/5 text-gray-400'}`}
+          >
+            <LinkIcon size={14} />
+            {t('linkMobile')}
+          </button>
+        </div>
+        <div className="flex items-center rounded-lg apple-control apple-focus px-3">
+          {inputMode === 'search' ? (
+            <>
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                className="h-11 w-full bg-transparent text-sm text-white focus:outline-none"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="flex h-11 w-11 items-center justify-center text-gray-400">
+                  <X size={16} />
+                </button>
+              )}
+              <button type="button" onClick={handleInlineSearch} disabled={isSearching} className="flex h-11 w-11 items-center justify-center text-white">
+                {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder={t('linkPlaceholder')}
+                className="h-11 w-full bg-transparent text-sm text-white focus:outline-none"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddVideo()}
+              />
+              <button type="button" onClick={handleAddVideo} className="flex h-11 w-11 items-center justify-center text-brand-red">
+                <Plus size={18} />
+              </button>
+            </>
+          )}
+        </div>
+        {searchResults.length > 0 && inputMode === 'search' && (
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-[#1c1c1e]">
+            {searchResults.map((result) => (
+              <button
+                key={result.id}
+                type="button"
+                onClick={() => handleSelectSearchResult(result)}
+                className="flex w-full items-center gap-3 border-b border-white/5 p-2 text-left last:border-0 hover:bg-white/10"
+              >
+                <img src={result.thumbnail} alt="" className="h-10 w-16 rounded object-cover" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-white">{result.title}</span>
+                  <span className="block truncate text-xs text-gray-500">{result.channelTitle}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="min-h-0 flex-1">
+        <Playlist
+          videos={playlist}
+          currentVideoId={currentVideo.id}
+          onSelectVideo={(video) => {
+            handleVideoChange(video);
+            if (!isDesktop) setMobileView('watch');
+          }}
+          onGenerateRecommendations={handleGenerateRecommendations}
+          isGenerating={isGenerating}
+          hasApiKey={!!(currentRoom?.apiKey && currentRoom.apiKey.trim() !== '')}
+          isShuffleOn={isShuffleOn}
+          repeatMode={repeatMode}
+          onToggleShuffle={handleToggleShuffle}
+          onToggleRepeat={handleToggleRepeat}
+          savedPlaylists={savedPlaylists}
+          onSavePlaylist={handleSavePlaylist}
+          onLoadPlaylist={handleLoadPlaylist}
+          onDeletePlaylist={handleDeletePlaylist}
+          onRemoveVideo={handleRemoveVideo}
+          onReorderPlaylist={handleReorderPlaylist}
+          onBrowse={() => setShowPlaylistBrowser(true)}
+        />
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col font-sans text-brand-text">
+    <div className="flex h-dvh flex-col overflow-hidden bg-brand-dark font-sans text-brand-text">
       {/* Start Modal */}
       {showStartModal && (
         <StartModal
@@ -1190,21 +1416,6 @@ const App: React.FC = () => {
           onClose={() => setShowStartModal(false)}
         />
       )}
-
-      {/* YouTube Search Modal */}
-      <YouTubeSearchModal
-        isOpen={showSearchModal}
-        onClose={() => setShowSearchModal(false)}
-        onSelectVideo={(video) => {
-          handleVideoChange(video);
-          setMessages(prev => [...prev, {
-            id: `search-${Date.now()}`,
-            userId: 'ai-1',
-            text: t('searchAndAdd', { title: video.title }),
-            timestamp: Date.now()
-          }]);
-        }}
-      />
 
       {/* Playlist Browser Modal */}
       <PlaylistBrowser
@@ -1256,6 +1467,7 @@ const App: React.FC = () => {
           syncService.broadcast({ type: 'VIDEO_CHANGE', payload: { video: videoToPlay } });
 
           // Notify
+          setMobileView('watch');
           setMessages(prev => [...prev, {
             id: `genre-${Date.now()}`,
             userId: 'ai-1',
@@ -1265,426 +1477,179 @@ const App: React.FC = () => {
         }}
       />
 
-      {/* Toast */}
-      {showCopiedToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#30D158] text-black px-4 py-2 rounded-lg shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex items-center gap-2 animate-bounce font-medium">
-          <Check size={16} /> {t('inviteLinkCopied')}
+      {toastMessage && (
+        <div className="fixed left-1/2 top-20 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-[#30D158] px-4 py-2 font-medium text-black shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
+          <Check size={16} /> {toastMessage}
         </div>
       )}
 
-      {/* Navbar */}
-      <nav className="h-16 border-b border-white/10 bg-black/65 backdrop-blur-2xl sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between shadow-[0_1px_0_rgba(255,255,255,0.06)]">
-        <div className="flex items-center gap-2">
-          <MonitorPlay className="text-brand-red" size={28} />
-          <h1 className="text-xl font-semibold text-white hidden md-force-block">TubeParty <span className="text-brand-red">AI</span></h1>
+      <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#0c0c0e] px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <MonitorPlay className="shrink-0 text-brand-red" size={22} />
+          <span className="hidden font-semibold text-white sm:inline">TubeParty</span>
           {currentRoom && (
-            <span className="ml-2 apple-control text-gray-300 text-xs font-mono px-2 py-1 rounded-lg hidden md-force-inline-flex items-center gap-1">
-              <Copy size={10} />
-              {currentRoom.id}
-            </span>
+            <button
+              type="button"
+              onClick={copyRoomCode}
+              className="flex h-9 max-w-[9.5rem] items-center gap-1.5 rounded-lg apple-control px-2.5 font-mono text-xs text-gray-200"
+            >
+              <Copy size={12} />
+              <span className="truncate">{currentRoom.id}</span>
+            </button>
           )}
         </div>
-
-        {/* Search / Link Input - Single Row */}
-        <div className="hidden md-force-flex items-center relative mx-4">
-          {/* Toggle Buttons */}
-          <div className="flex mr-2">
+        <div className="flex items-center gap-2">
+          {isDesktop && (
             <button
-              onClick={() => { setInputMode('search'); setSearchResults([]); }}
-              className={`px-3 py-2 text-xs rounded-l-lg transition-colors border ${inputMode === 'search'
-                ? 'bg-brand-red text-white border-brand-red'
-                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                }`}
+              type="button"
+              onClick={toggleCinema}
+              className="inline-flex h-11 items-center gap-2 rounded-lg apple-control px-3 text-sm text-white"
             >
-              <Search size={14} className="inline" />
+              {sidePanel === 'hidden' ? <MessageSquare size={16} /> : <EyeOff size={16} />}
+              {sidePanel === 'hidden' ? t('showChat') : t('hideChat')}
             </button>
-            <button
-              onClick={() => { setInputMode('link'); setSearchResults([]); }}
-              className={`px-3 py-2 text-xs rounded-r-lg transition-colors border-t border-r border-b ${inputMode === 'link'
-                ? 'bg-brand-red text-white border-brand-red'
-                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                }`}
-            >
-              <LinkIcon size={14} className="inline" />
-            </button>
-          </div>
-
-          {/* Input Box */}
-          <div className="flex items-center apple-control apple-focus rounded-lg px-3 py-2 w-[320px]">
-            {inputMode === 'search' ? (
-              <>
-                <input
-                  type="text"
-                  placeholder={t('searchPlaceholder')}
-                  className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
-                />
-                {searchQuery && (
-                  <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="mr-1 text-gray-500 hover:text-white">
-                    <X size={14} />
-                  </button>
-                )}
-                <button
-                  onClick={handleInlineSearch}
-                  disabled={isSearching}
-                  className="bg-brand-red hover:bg-[#2997ff] disabled:bg-gray-600 text-white px-2 py-1 rounded text-xs transition-colors"
-                >
-                  {isSearching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-                </button>
-              </>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  placeholder={t('linkPlaceholder')}
-                  className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddVideo()}
-                />
-                <button onClick={handleAddVideo} className="hover:bg-white/10 p-1 rounded transition-colors">
-                  <Plus size={16} className="text-brand-red" />
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Search Results Dropdown */}
-          {searchResults.length > 0 && inputMode === 'search' && (
-            <div className="absolute top-full left-0 right-0 mt-2 apple-surface-strong rounded-lg z-50 max-h-80 overflow-y-auto">
-              {/* 닫기 버튼 */}
-              <div className="sticky top-0 bg-[#1C1C1E]/95 border-b border-white/10 p-2 flex justify-between items-center backdrop-blur-xl">
-                <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
-                <button
-                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                  className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              {searchResults.map((result) => (
-                <button
-                  key={result.id}
-                  onClick={() => handleSelectSearchResult(result)}
-                  className="w-full flex items-center gap-3 p-2 hover:bg-white/10 transition-colors text-left"
-                >
-                  <img src={result.thumbnail} alt={result.title} className="w-16 h-10 object-cover rounded" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm line-clamp-1">{result.title}</p>
-                    <p className="text-gray-500 text-xs line-clamp-1">{result.channelTitle}</p>
-                  </div>
-                  <Plus size={16} className="text-brand-red flex-shrink-0" />
-                </button>
-              ))}
-            </div>
           )}
-        </div>
-
-        <div className="flex items-center gap-1 sm:gap-2">
-          {/* Language Selector */}
-          <div className="relative">
+          <div ref={moreMenuRef} className="relative">
             <button
-              onClick={() => setShowLanguageMenu(!showLanguageMenu)}
-              className="flex items-center gap-1 apple-control text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
-              title="Language"
-            >
-              <Globe size={14} />
-              <span className="hidden sm:inline">{getCurrentLanguageInfo(language).flag}</span>
-            </button>
-
-            {showLanguageMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowLanguageMenu(false)} />
-                <div className="absolute top-full right-0 mt-2 apple-surface-strong rounded-lg overflow-hidden min-w-[140px] z-50">
-                  {languageOptions.map((lang) => (
-                    <button
-                      key={lang.code}
-                      onClick={() => {
-                        setLanguage(lang.code);
-                        setShowLanguageMenu(false);
-                      }}
-                      className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${language === lang.code
-                        ? 'bg-brand-red text-white'
-                        : 'text-gray-300 hover:bg-white/10'
-                        }`}
-                    >
-                      <span>{lang.flag}</span>
-                      <span>{lang.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Playlist Browser Button */}
-          <button
-            onClick={() => setShowPlaylistBrowser(true)}
-            className="flex items-center gap-1 sm:gap-2 bg-[#5E5CE6] hover:bg-[#7D7AFF] text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
-            title={t('playlist')}
-          >
-            <ListMusic size={16} />
-            <span className="hidden sm:inline">{t('playlist')}</span>
-          </button>
-
-          {/* Sync Toggle Button */}
-          <button
-            onClick={handleToggleSync}
-            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors border ${isSyncEnabled
-              ? 'bg-[#30D158]/15 text-[#30D158] border-[#30D158]/30 hover:bg-[#30D158]/22'
-              : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
-              }`}
-            title={isSyncEnabled ? t('sync') : t('individualPlay')}
-          >
-            {isSyncEnabled ? <Users size={16} /> : <UserX size={16} />}
-            <span className="hidden sm:inline">{isSyncEnabled ? t('sync') : t('individualPlay')}</span>
-          </button>
-
-          {/* Invite Button */}
-          <button
-            onClick={handleShare}
-            className="flex items-center gap-1 sm:gap-2 apple-control text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
-            title={t('invite')}
-          >
-            <Share2 size={16} />
-            <span className="hidden sm:inline">{t('invite')}</span>
-          </button>
-
-          {/* Voice Chat */}
-          {currentRoom && currentUser && (
-            <VoiceChat
-              roomId={currentRoom.id}
-              userId={currentUser.id}
-              userName={currentUser.name}
-              onError={(error) => {
-                setMessages(prev => [...prev, {
-                  id: `voice-error-${Date.now()}`,
-                  userId: 'ai-1',
-                  text: `${t('voiceError')} ${error}`,
-                  timestamp: Date.now()
-                }]);
+              type="button"
+              onClick={() => {
+                if (isDesktop) setMoreOpen((open) => !open);
+                else setMobileView('more');
               }}
-            />
-          )}
-
-          {/* Leave Room Button */}
-          <button
-            onClick={() => {
-              // Remove user from Firebase
-              if (currentRoom && currentUser) {
-                firebaseService.removeUserFromRoom(currentRoom.id, currentUser.id);
+              className="inline-flex h-11 items-center gap-1.5 rounded-lg apple-control px-3 text-sm text-white"
+            >
+              <MoreHorizontal size={16} />
+              {t('tabMore')}
+            </button>
+            <div
+              className={
+                isDesktop
+                  ? `absolute right-0 top-full z-50 mt-2 w-72 ${moreOpen ? '' : 'hidden'}`
+                  : mobileView === 'more'
+                    ? 'fixed inset-x-0 top-14 z-30 overflow-y-auto bg-[#050505] px-3 py-3'
+                    : 'hidden'
               }
-              // Clear session
-              sessionStorage.removeItem('tubePartySession');
-              // Reset state
-              setHasJoined(false);
-              setCurrentRoom(null);
-              setCurrentUser({ id: '', name: '', avatar: '', isAi: false });
-              setUsers([SYSTEM_AI]);
-              setMessages([]);
-              setPlaylist([]);
-              setCurrentVideo({ id: '', title: '', channelTitle: '', thumbnail: '' });
-            }}
-            className="flex items-center gap-1 sm:gap-2 bg-[#FF453A]/12 hover:bg-[#FF453A] text-[#FF453A] hover:text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors border border-[#FF453A]/25"
-            title={t('leave')}
-          >
-            <LogOut size={14} />
-            <span className="hidden sm:inline">{t('leave')}</span>
-          </button>
-
+              style={!isDesktop && mobileView === 'more' ? { bottom: showMobileTabs ? 'calc(4rem + env(safe-area-inset-bottom))' : 0 } : undefined}
+            >
+              {moreMenu}
+            </div>
+          </div>
         </div>
-      </nav>
+      </header>
 
-      {/* Mobile Input */}
-      <div className="md:hidden p-3 bg-black/45 border-b border-white/10 backdrop-blur-xl relative md-force-hidden">
-        {/* Mobile Tab Buttons */}
-        <div className="flex mb-2 gap-2">
-          <button
-            onClick={() => { setInputMode('search'); setSearchResults([]); }}
-            className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'search'
-              ? 'bg-brand-red text-white'
-              : 'bg-white/5 text-gray-400'
-              }`}
-          >
-            <Search size={14} />{t('searchMobile')}
-          </button>
-          <button
-            onClick={() => { setInputMode('link'); setSearchResults([]); }}
-            className={`flex-1 py-2 text-sm rounded-lg transition-colors flex items-center justify-center gap-1 ${inputMode === 'link'
-              ? 'bg-brand-red text-white'
-              : 'bg-white/5 text-gray-400'
-              }`}
-          >
-            <LinkIcon size={14} />{t('linkMobile')}
-          </button>
-        </div>
+      <div className={`flex min-h-0 flex-1 ${isDesktop ? 'flex-row' : 'flex-col'}`}>
+        <section className={`flex min-w-0 flex-col ${minimized ? 'shrink-0' : 'min-h-0 flex-1'}`}>
+          <div className={isDesktop ? 'mx-auto flex w-full max-w-5xl flex-1 flex-col p-4 lg:p-6' : 'flex min-h-0 flex-1 flex-col'}>
+            <VideoPlayer
+              videoId={currentVideo.id}
+              onVideoEnd={handleVideoEnd}
+              onVideoError={() => {
+                if (playlist.length > 1) {
+                  const currentIndex = playlist.findIndex((video) => video.id === currentVideo.id);
+                  const nextIndex = (currentIndex + 1) % playlist.length;
+                  const nextVideo = playlist[nextIndex];
+                  setCurrentVideo(nextVideo);
+                  if (currentRoom && currentUser) {
+                    firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
+                  }
+                  setMessages((prev) => [...prev, {
+                    id: `skip-${Date.now()}`,
+                    userId: 'ai-1',
+                    text: t('skipUnplayable'),
+                    timestamp: Date.now()
+                  }]);
+                }
+              }}
+              currentUserId={currentUser?.id}
+              syncState={playbackSyncState}
+              onPlaybackSync={handlePlaybackSync}
+              syncEnabled={isSyncEnabled}
+              controlsMode={controlsMode}
+              minimized={minimized}
+              minimizedTitle={currentVideo.title}
+              onRestore={() => setMobileView('watch')}
+              onPositionShared={() => showToast(t('positionShared'))}
+            />
 
-        {/* Mobile Input Box */}
-        <div className="flex items-center apple-control apple-focus rounded-lg px-3 py-2">
-          {inputMode === 'search' ? (
-            <>
-              <input
-                type="text"
-                placeholder={t('searchMobilePlaceholder')}
-                className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
-              />
+            {!minimized && (
+              <div className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs ${isSyncEnabled ? 'border-[#30D158]/30 text-[#30D158]' : 'border-white/10 text-gray-400'}`}>
+                    <span className={`h-2 w-2 rounded-full ${isSyncEnabled ? 'bg-[#30D158]' : 'bg-gray-500'}`} />
+                    {isSyncEnabled ? t('synced') : t('individualPlay')}
+                  </span>
+                  <span className="text-xs text-gray-500">{t('participantsWatching', { count: humanCount })}</span>
+                </div>
+                <h2 className="mt-2 line-clamp-2 text-lg font-semibold text-white">{currentVideo.title || t('playlistTitle')}</h2>
+                {currentVideo.channelTitle && (
+                  <p className="text-sm text-gray-400">{currentVideo.channelTitle}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {isDesktop && sidePanel !== 'hidden' && (
+          <aside className="flex h-full w-[360px] shrink-0 flex-col border-l border-white/10">
+            <div className="grid h-12 shrink-0 grid-cols-2 border-b border-white/10">
               <button
-                onClick={handleInlineSearch}
-                disabled={isSearching}
-                className="ml-2 bg-brand-red px-3 py-1 rounded text-white text-sm"
+                type="button"
+                onClick={() => openSidePanel('chat')}
+                className={`text-sm font-medium ${sidePanel === 'chat' ? 'border-b-2 border-white text-white' : 'text-gray-400'}`}
               >
-                {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                {t('tabChat')}
               </button>
-            </>
-          ) : (
-            <>
-              <input
-                type="text"
-                placeholder={t('linkMobilePlaceholder')}
-                className="bg-transparent border-none focus:outline-none text-sm text-white w-full"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-              />
-              <button onClick={handleAddVideo} className="ml-2">
-                <Plus size={20} className="text-brand-red" />
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Mobile Search Results */}
-        {searchResults.length > 0 && inputMode === 'search' && (
-          <div className="mt-2 apple-surface-strong rounded-lg max-h-60 overflow-y-auto">
-            {/* 닫기 버튼 */}
-            <div className="sticky top-0 bg-[#1C1C1E]/95 border-b border-white/10 p-2 flex justify-between items-center backdrop-blur-xl">
-              <span className="text-gray-400 text-xs">{t('searchResults')} {searchResults.length}</span>
               <button
-                onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10"
+                type="button"
+                onClick={() => openSidePanel('playlist')}
+                className={`text-sm font-medium ${sidePanel === 'playlist' ? 'border-b-2 border-white text-white' : 'text-gray-400'}`}
               >
-                <X size={16} />
+                {t('tabList')}
               </button>
             </div>
-            {searchResults.map((result) => (
-              <button
-                key={result.id}
-                onClick={() => handleSelectSearchResult(result)}
-                className="w-full flex items-center gap-3 p-2 hover:bg-white/10 transition-colors text-left border-b border-white/5 last:border-0"
-              >
-                <img src={result.thumbnail} alt={result.title} className="w-14 h-9 object-cover rounded" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm line-clamp-1">{result.title}</p>
-                  <p className="text-gray-500 text-xs line-clamp-1">{result.channelTitle}</p>
-                </div>
-              </button>
-            ))}
+            <div className="min-h-0 flex-1">
+              {sidePanel === 'chat' ? chatPanel : queuePanel}
+            </div>
+          </aside>
+        )}
+
+        {!isDesktop && mobileView === 'chat' && (
+          <div className="flex min-h-0 flex-1 flex-col justify-end">
+            <div className="flex h-[70vh] max-h-full min-h-[55%] flex-col">
+              {chatPanel}
+            </div>
+          </div>
+        )}
+
+        {!isDesktop && mobileView === 'playlist' && (
+          <div className="min-h-0 flex-1">
+            {queuePanel}
           </div>
         )}
       </div>
 
-      {/* Main Layout */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left: Video + Playlist */}
-        <section className="lg:col-span-8 flex flex-col gap-4 lg-force-flex">
-          <VideoPlayer
-            videoId={currentVideo.id}
-            onVideoEnd={handleVideoEnd}
-            onVideoError={() => {
-              // Auto-skip to next video on error
-              if (playlist.length > 1) {
-                const currentIndex = playlist.findIndex(v => v.id === currentVideo.id);
-                const nextIndex = (currentIndex + 1) % playlist.length;
-                const nextVideo = playlist[nextIndex];
-                setCurrentVideo(nextVideo);
-                if (currentRoom && currentUser) {
-                  firebaseService.updateCurrentVideo(currentRoom.id, nextVideo, currentUser.id);
-                }
-                setMessages(prev => [...prev, {
-                  id: `skip-${Date.now()}`,
-                  userId: 'ai-1',
-                  text: t('skipUnplayable'),
-                  timestamp: Date.now()
-                }]);
-              }
-            }}
-            currentUserId={currentUser?.id}
-            syncState={playbackSyncState}
-            onPlaybackSync={handlePlaybackSync}
-            syncEnabled={isSyncEnabled}
-          />
-
-          <div className="apple-surface p-4 rounded-lg flex justify-between items-start">
-            <div>
-              <h2 className="text-xl font-semibold text-white mb-1 line-clamp-1">{currentVideo.title}</h2>
-              <p className="text-gray-400 text-sm">{currentVideo.channelTitle}</p>
-            </div>
-          </div>
-
-          <div className="lg:hidden grid grid-cols-2 gap-1 rounded-lg bg-white/[0.055] p-1 border border-white/10">
-            <button
-              type="button"
-              onClick={() => setActiveTab(TabType.CHAT)}
-              className={`h-10 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === TabType.CHAT
-                  ? 'bg-brand-red text-white shadow-[0_8px_24px_rgba(10,132,255,0.25)]'
-                  : 'text-gray-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <MessageSquare size={15} />
-              {t('liveChat')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab(TabType.PLAYLIST)}
-              className={`h-10 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === TabType.PLAYLIST
-                  ? 'bg-brand-red text-white shadow-[0_8px_24px_rgba(10,132,255,0.25)]'
-                  : 'text-gray-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <ListVideo size={15} />
-              {t('playlist')}
-            </button>
-          </div>
-
-          <div className={`max-h-[400px] ${activeTab === TabType.CHAT ? 'hidden' : 'block'} lg:block`}>
-            <Playlist
-              videos={playlist}
-              currentVideoId={currentVideo.id}
-              onSelectVideo={handleVideoChange}
-              onGenerateRecommendations={handleGenerateRecommendations}
-              isGenerating={isGenerating}
-              hasApiKey={!!(currentRoom?.apiKey && currentRoom.apiKey.trim() !== '')}
-              isShuffleOn={isShuffleOn}
-              repeatMode={repeatMode}
-              onToggleShuffle={handleToggleShuffle}
-              onToggleRepeat={handleToggleRepeat}
-              savedPlaylists={savedPlaylists}
-              onSavePlaylist={handleSavePlaylist}
-              onLoadPlaylist={handleLoadPlaylist}
-              onDeletePlaylist={handleDeletePlaylist}
-              onRemoveVideo={handleRemoveVideo}
-              onReorderPlaylist={handleReorderPlaylist}
-            />
-          </div>
-        </section>
-
-        {/* Right: Chat Only */}
-        <section className={`lg:col-span-4 h-[55vh] min-h-[360px] max-h-[560px] lg:max-h-none lg:h-[calc(100vh-100px)] flex-col lg:sticky lg:top-20 ${activeTab === TabType.PLAYLIST ? 'hidden' : 'flex'} lg-force-flex`}>
-          <ChatRoom
-            messages={messages}
-            users={users}
-            currentUser={currentUser!}
-            onSendMessage={handleSendMessage}
-            isAiTyping={isAiTyping}
-          />
-        </section>
-      </main>
+      {showMobileTabs && (
+        <nav className="z-40 grid shrink-0 grid-cols-3 border-t border-white/10 bg-black/90 pb-[env(safe-area-inset-bottom)]">
+          {([
+            ['chat', t('tabChat'), MessageSquare],
+            ['playlist', t('tabList'), ListVideo],
+            ['more', t('tabMore'), MoreHorizontal],
+          ] as const).map(([mode, label, Icon]) => {
+            const active = mobileView === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setMobileView(mode)}
+                className={`flex h-16 flex-col items-center justify-center gap-1 text-xs ${active ? 'text-white' : 'text-gray-400'}`}
+              >
+                <Icon size={20} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 };

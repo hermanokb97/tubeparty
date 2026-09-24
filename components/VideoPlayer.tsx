@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { SkipForward, Users, Radio, Volume2, VolumeX, Music } from 'lucide-react';
+import { SkipForward, Volume2, VolumeX, MapPin, Play } from 'lucide-react';
+import { useI18n } from '../services/i18n';
 
 export interface PlaybackSyncState {
   currentTime: number;
@@ -8,6 +9,8 @@ export interface PlaybackSyncState {
   syncedBy: string;
   syncedAt: number;
 }
+
+export type PlayerControlsMode = 'tap' | 'always' | 'hover';
 
 interface VideoPlayerProps {
   videoId: string;
@@ -18,6 +21,12 @@ interface VideoPlayerProps {
   syncState?: PlaybackSyncState | null;
   onPlaybackSync?: (state: Omit<PlaybackSyncState, 'syncedAt'>) => void;
   syncEnabled?: boolean;
+  /** tap: 모바일, 탭하면 펼치고 3초 후 숨김. always: PC 상시. hover: 시네마 호버 */
+  controlsMode?: PlayerControlsMode;
+  minimized?: boolean;
+  minimizedTitle?: string;
+  onRestore?: () => void;
+  onPositionShared?: () => void;
 }
 
 // Extend Window interface to include YouTube API
@@ -75,8 +84,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   currentUserId,
   syncState,
   onPlaybackSync,
-  syncEnabled = true
+  syncEnabled = true,
+  controlsMode = 'always',
+  minimized = false,
+  minimizedTitle = '',
+  onRestore,
+  onPositionShared,
 }) => {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const onVideoEndRef = useRef(onVideoEnd);
@@ -444,7 +459,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [syncFeedback, setSyncFeedback] = useState(false);
   const [musicVolume, setMusicVolume] = useState(100);
   const [isMusicMuted, setIsMusicMuted] = useState(false);
-  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const hideTimerRef = useRef<number | null>(null);
+
+  const clearHideTimer = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  };
+
+  const scheduleHide = useCallback(() => {
+    clearHideTimer();
+    hideTimerRef.current = window.setTimeout(() => setControlsOpen(false), 3000);
+  }, []);
+
+  const revealControls = useCallback(() => {
+    if (controlsMode !== 'tap') return;
+    setControlsOpen(true);
+    scheduleHide();
+  }, [controlsMode, scheduleHide]);
+
+  useEffect(() => () => clearHideTimer(), []);
+
+  useEffect(() => {
+    if (controlsMode !== 'tap') {
+      clearHideTimer();
+      setControlsOpen(false);
+    }
+  }, [controlsMode]);
 
   const handleManualSkip = () => {
     onVideoError?.();
@@ -496,125 +539,112 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         syncedBy: currentUserId
       });
       
-      // 피드백 표시
       setSyncFeedback(true);
       setTimeout(() => setSyncFeedback(false), 2000);
-      
+      onPositionShared?.();
     } catch (e) {
       console.error('Error manual sync:', e);
     }
   };
 
-  // 10단계 볼륨 프리셋
-  const volumePresets = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  const controlsVisible = !minimized && (
+    controlsMode === 'always' ||
+    (controlsMode === 'tap' && controlsOpen) ||
+    controlsMode === 'hover'
+  );
+
+  const barCollapsed = minimized || (controlsMode === 'tap' && !controlsOpen);
 
   return (
-    <div className="relative w-full h-0 pb-[56.25%] bg-black rounded-lg overflow-hidden shadow-[0_28px_80px_rgba(0,0,0,0.44)] border border-white/10">
-      {/* YouTube Player Container - z-index 1 */}
-      <div
-        ref={containerRef}
-        className="absolute top-0 left-0 w-full h-full z-[1]"
-      />
+    <div className={controlsMode === 'hover' && !minimized ? 'group/player' : undefined}>
+      <div className={`yt-frame relative w-full bg-black overflow-hidden border border-white/10 ${minimized ? 'h-12' : 'aspect-video lg:rounded-t-xl'}`}>
+        <div ref={containerRef} className="absolute inset-0" />
 
-      {/* Overlay Container - pointer-events: none로 클릭 통과 */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-10">
-        {/* Sync indicator & Manual sync button */}
-        {syncEnabled && (
-          <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-auto">
-            <div className="bg-black/55 backdrop-blur-xl text-[#30D158] px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs border border-white/10">
-              <Users size={12} />
-              <span>동기화 중</span>
-            </div>
-            <button
-              onClick={handleManualSync}
-              className={`px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all ${
-                syncFeedback 
-                  ? 'bg-[#30D158] text-black' 
-                  : 'bg-black/55 backdrop-blur-xl text-[#FFD60A] hover:bg-[#FFD60A] hover:text-black border border-white/10'
-              }`}
-              title="현재 재생 위치를 다른 사람들에게 공유"
-            >
-              <Radio size={12} className={syncFeedback ? 'animate-pulse' : ''} />
-              <span>{syncFeedback ? '전송됨!' : '지금 위치 공유'}</span>
-            </button>
-          </div>
+        {minimized && (
+          <button
+            type="button"
+            onClick={onRestore}
+            className="absolute inset-0 z-20 flex items-center gap-3 px-3 bg-[#111]/95 text-left"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/15 bg-white/5">
+              <Play size={14} className="text-white" fill="currentColor" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-white">{minimizedTitle}</span>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/15">
+              <Play size={14} className="text-white" fill="currentColor" />
+            </span>
+          </button>
         )}
 
-        {/* Bottom controls - 컨테이너는 pointer-events-none, 개별 버튼만 클릭 가능 */}
-        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-          {/* Music Volume Control */}
-          <div className="relative flex items-center gap-2 pointer-events-auto">
-            <button
-              onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-              className="bg-black/55 hover:bg-black/75 backdrop-blur-xl text-white p-2 rounded-lg flex items-center gap-1.5 transition-colors border border-white/10"
-              title="음악 볼륨 조절"
-            >
-              <Music size={14} className="text-purple-400" />
-              {isMusicMuted || musicVolume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              <span className="text-xs ml-1">{isMusicMuted ? 0 : musicVolume}</span>
-            </button>
-            
-            {/* Volume Slider with 10-step buttons */}
-            {showVolumeSlider && (
-              <div className="absolute bottom-full left-0 mb-2 bg-black/85 backdrop-blur-2xl rounded-lg p-3 flex flex-col items-center gap-3 shadow-xl border border-white/10 z-50">
-                <span className="text-sm font-medium text-purple-400">🎵 음악 볼륨</span>
-                
-                {/* Slider */}
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="10"
-                  value={isMusicMuted ? 0 : musicVolume}
-                  onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
-                  className="w-40 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#5E5CE6]"
-                />
-                
-                {/* 10-step preset buttons */}
-                <div className="flex flex-wrap gap-1 justify-center max-w-[180px]">
-                  {volumePresets.map((vol) => (
-                    <button
-                      key={vol}
-                      onClick={() => handleMusicVolumeChange(vol)}
-                      className={`w-8 h-7 text-xs rounded transition-all ${
-                        musicVolume === vol && !isMusicMuted
-                          ? 'bg-[#5E5CE6] text-white font-semibold'
-                          : 'bg-white/10 text-gray-300 hover:bg-white/15'
-                      }`}
-                    >
-                      {vol}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2 w-full">
-                  <span className="text-lg font-bold text-white flex-1 text-center">
-                    {isMusicMuted ? '🔇 0' : `🔊 ${musicVolume}`}%
-                  </span>
-                  <button
-                    onClick={handleMusicMuteToggle}
-                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                      isMusicMuted 
-                        ? 'bg-[#FF453A]/25 text-[#FF453A] hover:bg-[#FF453A]/35' 
-                        : 'bg-white/10 text-gray-300 hover:bg-white/15'
-                    }`}
-                  >
-                    {isMusicMuted ? '음소거 해제' : '음소거'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Skip button */}
+        {!minimized && controlsMode === 'tap' && !controlsOpen && (
           <button
-            onClick={handleManualSkip}
-            className="bg-black/55 hover:bg-brand-red backdrop-blur-xl text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm pointer-events-auto border border-white/10"
-            title="재생 안되면 클릭해서 스킵"
-          >
-            <SkipForward size={16} />
-            스킵
-          </button>
+            type="button"
+            aria-label={t('showControls')}
+            onClick={revealControls}
+            className="absolute inset-0 z-20 cursor-pointer bg-transparent"
+          />
+        )}
+      </div>
+
+      <div
+        className={
+          controlsMode === 'hover' && !minimized
+            ? 'grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 group-hover/player:grid-rows-[1fr]'
+            : barCollapsed
+              ? 'grid grid-rows-[0fr]'
+              : 'grid grid-rows-[1fr]'
+        }
+        onPointerDown={controlsMode === 'tap' ? scheduleHide : undefined}
+      >
+        <div className="overflow-hidden">
+          {controlsVisible && (
+            <div className="flex h-12 items-center gap-1 overflow-x-auto border border-t-0 border-white/10 bg-[#141416] px-1.5 lg:rounded-b-xl">
+              <button
+                type="button"
+                onClick={handleMusicMuteToggle}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-white hover:bg-white/10"
+                title={isMusicMuted ? '음소거 해제' : '음소거'}
+              >
+                {isMusicMuted || musicVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={10}
+                aria-label="volume"
+                value={isMusicMuted ? 0 : musicVolume}
+                onChange={(e) => {
+                  handleMusicVolumeChange(Number(e.target.value));
+                  if (controlsMode === 'tap') scheduleHide();
+                }}
+                className="h-11 w-24 shrink-0 cursor-pointer accent-white sm:w-auto sm:min-w-[88px] sm:flex-1"
+              />
+              <button
+                type="button"
+                onClick={handleManualSkip}
+                className="flex h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm text-white hover:bg-white/10"
+                title={t('skip')}
+              >
+                <SkipForward size={16} />
+                <span>{t('skip')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={!syncEnabled || !currentUserId}
+                className={`flex h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-sm transition-colors ${
+                  syncFeedback
+                    ? 'bg-[#30D158] text-black'
+                    : 'text-white hover:bg-white/10 disabled:text-gray-500'
+                }`}
+                title={t('sharePosition')}
+              >
+                <MapPin size={16} />
+                <span className="whitespace-nowrap">{t('sharePosition')}</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

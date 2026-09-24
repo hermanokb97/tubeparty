@@ -253,30 +253,28 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
 
     if (!isJoined) {
         return (
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={handleJoin}
-                    disabled={isConnecting}
-                    className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-[#30D158]/15 hover:bg-[#30D158]/22 disabled:bg-[#FFD60A]/20 text-[#30D158] disabled:text-[#FFD60A] rounded-lg text-xs sm:text-sm font-medium transition-all border border-[#30D158]/25"
-                >
-                    {isConnecting ? (
-                        <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            <span className="hidden sm:inline text-xs">{audioStatus || '연결 중...'}</span>
-                        </>
-                    ) : (
-                        <>
-                            <PhoneCall size={16} />
-                            <span className="hidden sm:inline">음성 참가</span>
-                        </>
-                    )}
-                </button>
-            </div>
+            <button
+                onClick={handleJoin}
+                disabled={isConnecting}
+                className="flex h-12 w-full items-center gap-2 rounded-lg border border-[#30D158]/25 bg-[#30D158]/15 px-3 text-sm font-medium text-[#30D158] transition-all hover:bg-[#30D158]/22 disabled:border-[#FFD60A]/30 disabled:bg-[#FFD60A]/20 disabled:text-[#FFD60A]"
+            >
+                {isConnecting ? (
+                    <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span className="text-xs">{audioStatus || '연결 중...'}</span>
+                    </>
+                ) : (
+                    <>
+                        <PhoneCall size={16} />
+                        <span>음성 참가</span>
+                    </>
+                )}
+            </button>
         );
     }
 
     return (
-        <div className="flex items-center gap-1 sm:gap-2 apple-control rounded-lg px-2 sm:px-3 py-1 sm:py-1.5">
+        <div className="flex w-full items-center gap-1 rounded-lg apple-control px-2 py-1">
             {/* Status indicator - hidden on mobile */}
             <div className="hidden sm:flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${remoteUsers.length > 0 ? 'bg-[#30D158] animate-pulse' : 'bg-[#30D158]'}`} />
@@ -301,7 +299,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             {/* Mute button */}
             <button
                 onClick={handleToggleMute}
-                className={`p-1 sm:p-1.5 rounded-full transition-colors ${isMuted
+                className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors ${isMuted
                     ? 'bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25'
                     : 'hover:bg-white/10 text-gray-300'
                     }`}
@@ -314,7 +312,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             <div className="relative flex items-center">
                 <button
                     onClick={() => setShowVoiceVolumeSlider(!showVoiceVolumeSlider)}
-                    className={`p-1 sm:p-1.5 rounded-full transition-colors flex items-center gap-1 ${isDeafened || voiceVolume === 0
+                    className={`flex h-11 min-w-11 items-center justify-center gap-1 rounded-full px-2 transition-colors ${isDeafened || voiceVolume === 0
                         ? 'bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25'
                         : 'hover:bg-white/10 text-gray-300'
                         }`}
@@ -382,7 +380,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
             {/* Leave button */}
             <button
                 onClick={handleLeave}
-                className="p-1 sm:p-1.5 rounded bg-[#FF453A]/15 text-[#FF453A] hover:bg-[#FF453A]/25 transition-colors"
+                className="flex h-11 w-11 items-center justify-center rounded bg-[#FF453A]/15 text-[#FF453A] transition-colors hover:bg-[#FF453A]/25"
                 title="음성 나가기"
             >
                 <PhoneOff size={16} />
