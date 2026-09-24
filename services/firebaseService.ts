@@ -36,12 +36,18 @@ export const ensureFirebaseReady = async (): Promise<void> => {
     if (auth.currentUser) return;
 
     if (!firebaseReadyPromise) {
-        firebaseReadyPromise = signInAnonymously(auth)
-            .then(() => undefined)
-            .catch((error) => {
-                firebaseReadyPromise = null;
-                throw error;
-            });
+        firebaseReadyPromise = (async () => {
+            // currentUser is null until persistence restores. Signing in before
+            // authStateReady() mints a new anonymous user on every refresh and
+            // drops room membership / realtime listeners tied to the previous uid.
+            await auth.authStateReady();
+            if (!auth.currentUser) {
+                await signInAnonymously(auth);
+            }
+        })().catch((error) => {
+            firebaseReadyPromise = null;
+            throw error;
+        });
     }
 
     await firebaseReadyPromise;
@@ -257,22 +263,32 @@ export const joinRoomByInvite = async (token: string, nickname: string): Promise
     }
 };
 
-export const updateCurrentVideo = async (roomId: string, video: Video, actorId: string): Promise<void> => {
+export const updateCurrentVideo = async (
+    roomId: string,
+    video: Video,
+    actorId: string,
+    updatedAt = Date.now(),
+): Promise<void> => {
     await ensureFirebaseReady();
 
     await update(ref(database, `rooms/${roomId}`), {
         currentVideo: video,
-        currentVideoUpdatedAt: Date.now(),
+        currentVideoUpdatedAt: updatedAt,
         currentVideoUpdatedBy: actorId,
     });
 };
 
-export const updatePlaylist = async (roomId: string, playlist: Video[], actorId: string): Promise<void> => {
+export const updatePlaylist = async (
+    roomId: string,
+    playlist: Video[],
+    actorId: string,
+    updatedAt = Date.now(),
+): Promise<void> => {
     await ensureFirebaseReady();
 
     await update(ref(database, `rooms/${roomId}`), {
         playlist,
-        playlistUpdatedAt: Date.now(),
+        playlistUpdatedAt: updatedAt,
         playlistUpdatedBy: actorId,
     });
 };
@@ -359,8 +375,19 @@ export const subscribeToUsers = (
             onUpdate([]);
             return;
         }
-        const data = snapshot.val();
-        const users = Object.values(data) as RoomUser[];
+        const data = snapshot.val() as Record<string, Partial<RoomUser> & { nickname?: string }>;
+        const users = Object.entries(data).flatMap(([key, value]) => {
+            const id = typeof value?.id === 'string' && value.id ? value.id : key;
+            const name = typeof value?.name === 'string' && value.name
+                ? value.name
+                : typeof value?.nickname === 'string' ? value.nickname : '';
+            if (!id || !name) return [];
+            return [{
+                id,
+                name,
+                joinedAt: typeof value?.joinedAt === 'number' ? value.joinedAt : 0,
+            }];
+        });
         onUpdate(users.sort((a, b) => a.joinedAt - b.joinedAt));
     }, (error) => {
         console.error('Firebase users subscription failed:', error);

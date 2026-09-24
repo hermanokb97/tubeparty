@@ -30,6 +30,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
     const [showVoiceVolumeSlider, setShowVoiceVolumeSlider] = useState(false);
 
     const voiceChatRef = useRef<VoiceChatService | null>(null);
+    const joiningRef = useRef(false);
     const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
     // Handle remote stream
@@ -90,6 +91,8 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
 
     // Join voice chat
     const handleJoin = async () => {
+        if (joiningRef.current || isJoined) return;
+        joiningRef.current = true;
         setIsConnecting(true);
         setAudioStatus('🎤 연결 중...');
         
@@ -113,6 +116,7 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({
         } catch (error) {
             handleError(error as Error);
         } finally {
+            joiningRef.current = false;
             setIsConnecting(false);
         }
     };

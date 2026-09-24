@@ -16,6 +16,9 @@ interface VideoPlayerProps {
   videoId: string;
   onVideoEnd?: () => void;
   onVideoError?: () => void;
+  onSkip?: () => void;
+  /** Changes when the same videoId should be loaded again (repeat one / manual replay). */
+  replayToken?: number;
   // 동기화 관련 props
   currentUserId?: string;
   syncState?: PlaybackSyncState | null;
@@ -81,6 +84,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoId,
   onVideoEnd,
   onVideoError,
+  onSkip,
+  replayToken = 0,
   currentUserId,
   syncState,
   onPlaybackSync,
@@ -252,10 +257,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               const currentTime = player.getCurrentTime?.();
               const duration = player.getDuration?.();
               if (typeof currentTime === 'number' && !Number.isNaN(currentTime)) {
-                lastPlaybackTimeRef.current = currentTime;
+                const previous = lastPlaybackTimeRef.current;
+                // YouTube resets currentTime to 0 when a video ends. Keeping the
+                // last real position lets the ended-state check recognize a finish.
+                const collapsedToStart = currentTime < 0.75 && previous > 1;
+                if (!collapsedToStart) {
+                  lastPlaybackTimeRef.current = currentTime;
+                }
               }
               if (typeof duration === 'number' && !Number.isNaN(duration) && duration > 0) {
                 lastDurationRef.current = duration;
+              }
+              const safeDuration = lastDurationRef.current;
+              const effectiveTime = lastPlaybackTimeRef.current;
+              const state = player.getPlayerState?.();
+              const minPlayTime = Math.min(10, safeDuration * 0.5);
+              if (
+                !endHandledRef.current &&
+                videoStartedRef.current &&
+                safeDuration > 5 &&
+                effectiveTime >= minPlayTime &&
+                safeDuration - effectiveTime <= 0.45 &&
+                (state === 0 || state === 1)
+              ) {
+                handleRealEnd();
               }
             } catch (e) {
               // ignore
@@ -427,7 +452,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       }
     });
-  }, [videoId, broadcastSync, syncEnabled, currentUserId]);
+  }, [videoId, replayToken, broadcastSync, syncEnabled, currentUserId]);
 
   useEffect(() => {
     initPlayer();
@@ -490,7 +515,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [controlsMode]);
 
   const handleManualSkip = () => {
-    onVideoError?.();
+    (onSkip ?? onVideoError)?.();
   };
 
   // 음악 볼륨 조절
